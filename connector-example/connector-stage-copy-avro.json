@@ -1,0 +1,25 @@
+{
+  "name": "snowflake-sink-gcob001d-ntfe001d",
+  "config": {
+    "connector.class": "br.com.triggoai.connector.v1.SnowflakeSinkConnector",
+    "tasks.max": "1",
+
+    "topics": "debezium.GCOB001D.dbo.NTFE001D",
+
+    "key.converter":                       "io.confluent.connect.avro.AvroConverter",
+    "key.converter.schema.registry.url":   "http://schema-registry:8081",
+    "value.converter":                     "io.confluent.connect.avro.AvroConverter",
+    "value.converter.schema.registry.url": "http://schema-registry:8081",
+
+    "snowflake.url":         "https://<ACCOUNT>.snowflakecomputing.com",
+    "snowflake.user":        "KAFKA_USER",
+    "snowflake.private.key": "MIIEvQIBADANBgkqhkiG9w0BAQEFAASC...",
+    "snowflake.database":    "LZ_SQL_IH_PRD",
+    "snowflake.schema":      "GCOB001D",
+    "snowflake.table":       "NTFE001D",
+
+    "buffer.count.records": "10000",
+    "buffer.flush.time":    "120",
+    "buffer.size.bytes":    "5000000"
+  }
+}

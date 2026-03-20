@@ -1,0 +1,25 @@
+{
+  "name": "snowflake-sink-flat-json-ntfe001d",
+  "config": {
+    "connector.class": "br.com.triggoai.connector.v1.SnowflakeSinkConnector",
+    "tasks.max": "1",
+
+    "topics": "meu-topico-flat",
+
+    "key.converter":   "org.apache.kafka.connect.storage.StringConverter",
+    "value.converter": "org.apache.kafka.connect.storage.StringConverter",
+
+    "snowflake.url":         "https://<ACCOUNT>.snowflakecomputing.com",
+    "snowflake.user":        "KAFKA_USER",
+    "snowflake.private.key": "MIIEvQIBADANBgkqhkiG9w0BAQEFAASC...",
+    "snowflake.database":    "LZ_SQL_IH_PRD",
+    "snowflake.schema":      "GCOB001D",
+    "snowflake.table":       "NTFE001D",
+
+    "pk.fields": "IDT_UNC_TSC,IDT_SEQ_UNC",
+
+    "buffer.count.records": "10000",
+    "buffer.flush.time":    "120",
+    "buffer.size.bytes":    "5000000"
+  }
+}

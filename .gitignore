@@ -1,0 +1,21 @@
+# Build output
+target/
+
+# Claude Code configs locais
+.claude/
+
+# Maven
+.mvn/
+!.mvn/wrapper/
+
+# IDEs
+.idea/
+*.iml
+.vscode/
+*.classpath
+*.project
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
