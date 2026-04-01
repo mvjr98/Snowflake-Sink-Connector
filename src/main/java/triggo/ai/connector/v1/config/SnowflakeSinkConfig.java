@@ -1,4 +1,4 @@
-package br.com.triggoai.connector.v1.config;
+package triggo.ai.connector.v1.config;
 
 import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.common.config.ConfigDef;

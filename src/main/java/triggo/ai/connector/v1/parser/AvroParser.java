@@ -1,6 +1,6 @@
-package br.com.triggoai.connector.v1.parser;
+package triggo.ai.connector.v1.parser;
 
-import br.com.triggoai.connector.v1.model.ParsedRecord;
+import triggo.ai.connector.v1.model.ParsedRecord;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.sink.SinkRecord;

@@ -1,6 +1,6 @@
-package br.com.triggoai.connector.v1.snowflake;
+package triggo.ai.connector.v1.snowflake;
 
-import br.com.triggoai.connector.v1.config.SnowflakeSinkConfig;
+import triggo.ai.connector.v1.config.SnowflakeSinkConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

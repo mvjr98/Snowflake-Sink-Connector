@@ -1,6 +1,6 @@
-package br.com.triggoai.connector.v1.parser;
+package triggo.ai.connector.v1.parser;
 
-import br.com.triggoai.connector.v1.model.ParsedRecord;
+import triggo.ai.connector.v1.model.ParsedRecord;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.avro.generic.GenericRecord;

@@ -1,6 +1,6 @@
-package br.com.triggoai.connector.v1.snowflake;
+package triggo.ai.connector.v1.snowflake;
 
-import br.com.triggoai.connector.v1.model.ParsedRecord;
+import triggo.ai.connector.v1.model.ParsedRecord;
 
 import java.util.List;
 

@@ -1,7 +1,7 @@
 {
   "name": "snowflake-sink-gcob001d-ntfe001d-json",
   "config": {
-    "connector.class": "br.com.triggoai.connector.v1.SnowflakeSinkConnector",
+    "connector.class": "triggo.ai.connector.v1.SnowflakeSinkConnector",
     "tasks.max": "1",
 
     "topics": "debezium.GCOB001D.dbo.NTFE001D",

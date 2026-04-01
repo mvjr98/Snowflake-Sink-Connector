@@ -1,7 +1,7 @@
 {
   "name": "snowflake-sink-flat-json-ntfe001d",
   "config": {
-    "connector.class": "br.com.triggoai.connector.v1.SnowflakeSinkConnector",
+    "connector.class": "triggo.ai.connector.v1.SnowflakeSinkConnector",
     "tasks.max": "1",
 
     "topics": "meu-topico-flat",

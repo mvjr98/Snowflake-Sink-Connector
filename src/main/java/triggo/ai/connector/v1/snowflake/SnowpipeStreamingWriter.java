@@ -1,7 +1,7 @@
-package br.com.triggoai.connector.v1.snowflake;
+package triggo.ai.connector.v1.snowflake;
 
-import br.com.triggoai.connector.v1.config.SnowflakeSinkConfig;
-import br.com.triggoai.connector.v1.model.ParsedRecord;
+import triggo.ai.connector.v1.config.SnowflakeSinkConfig;
+import triggo.ai.connector.v1.model.ParsedRecord;
 import net.snowflake.ingest.streaming.InsertValidationResponse;
 import net.snowflake.ingest.streaming.OpenChannelRequest;
 import net.snowflake.ingest.streaming.SnowflakeStreamingIngestChannel;

@@ -1,14 +1,14 @@
-package br.com.triggoai.connector.v1;
+package triggo.ai.connector.v1;
 
-import br.com.triggoai.connector.v1.config.SnowflakeSinkConfig;
-import br.com.triggoai.connector.v1.model.ParsedRecord;
-import br.com.triggoai.connector.v1.parser.AutoParser;
-import br.com.triggoai.connector.v1.parser.PayloadParser;
-import br.com.triggoai.connector.v1.snowflake.IngestWriter;
-import br.com.triggoai.connector.v1.snowflake.InlineProcessor;
-import br.com.triggoai.connector.v1.snowflake.SnowflakeConnectionHelper;
-import br.com.triggoai.connector.v1.snowflake.SnowpipeStreamingWriter;
-import br.com.triggoai.connector.v1.snowflake.StageCopyWriter;
+import triggo.ai.connector.v1.config.SnowflakeSinkConfig;
+import triggo.ai.connector.v1.model.ParsedRecord;
+import triggo.ai.connector.v1.parser.AutoParser;
+import triggo.ai.connector.v1.parser.PayloadParser;
+import triggo.ai.connector.v1.snowflake.IngestWriter;
+import triggo.ai.connector.v1.snowflake.InlineProcessor;
+import triggo.ai.connector.v1.snowflake.SnowflakeConnectionHelper;
+import triggo.ai.connector.v1.snowflake.SnowpipeStreamingWriter;
+import triggo.ai.connector.v1.snowflake.StageCopyWriter;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.apache.kafka.connect.sink.SinkTask;
 import org.slf4j.Logger;

@@ -1,4 +1,4 @@
-package br.com.triggoai.connector.v1.model;
+package triggo.ai.connector.v1.model;
 
 import java.util.Map;
 
