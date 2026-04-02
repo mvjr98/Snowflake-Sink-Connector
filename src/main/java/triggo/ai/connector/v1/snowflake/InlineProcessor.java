@@ -118,6 +118,7 @@ public class InlineProcessor {
         String target  = config.getSnowflakeTable();
         List<String> pks = resolvedPks;
         int batchSize  = config.getMergeBatchSize();
+        int cleanupDelaySeconds = config.getIngestCleanupDelaySeconds();
 
         log.info("InlineProcessor.processAllPending: table={}, batchSize={}", target, batchSize);
 
@@ -134,13 +135,17 @@ public class InlineProcessor {
         StringBuilder merge = new StringBuilder();
         merge.append("MERGE INTO ").append(target).append(" AS tgt\n");
         merge.append("USING (\n");
+        merge.append("    WITH batch AS (\n");
+        merge.append("        SELECT * FROM ").append(ingest).append("\n");
+        merge.append("        ORDER BY KFK_PARTITION ASC, KFK_OFFSET ASC\n");
+        merge.append("        LIMIT ").append(batchSize).append("\n");
+        merge.append("    )\n");
         merge.append("    SELECT ").append(colList).append(", KFK_OP FROM (\n");
         merge.append("        SELECT src_inner.*, ROW_NUMBER() OVER (\n");
         merge.append("            PARTITION BY ").append(pkPartition).append("\n");
         merge.append("            ORDER BY KFK_OFFSET DESC, KFK_PARTITION DESC\n");
         merge.append("        ) AS rn\n");
-        merge.append("        FROM ").append(ingest).append(" AS src_inner\n");
-        merge.append("        LIMIT ").append(batchSize).append("\n");
+        merge.append("        FROM batch AS src_inner\n");
         merge.append("    ) ranked WHERE rn = 1\n");
         merge.append(") AS src\n");
         merge.append("ON (").append(pkJoin).append(")\n");
@@ -160,6 +165,19 @@ public class InlineProcessor {
             stmt.execute(mergeSQL);
         }
 
+        String cleanupSQL = "DELETE FROM " + ingest + " AS ingest USING ("
+                + "SELECT KFK_TOPIC, KFK_PARTITION, KFK_OFFSET FROM " + ingest + " "
+                + "ORDER BY KFK_PARTITION ASC, KFK_OFFSET ASC LIMIT " + batchSize
+                + ") AS batch WHERE ingest.KFK_TOPIC = batch.KFK_TOPIC "
+                + "AND ingest.KFK_PARTITION = batch.KFK_PARTITION "
+                + "AND ingest.KFK_OFFSET = batch.KFK_OFFSET "
+                + "AND ingest.KFK_DATETIME <= DATEADD('SECOND', -" + cleanupDelaySeconds + ", CURRENT_TIMESTAMP())";
+
+        try (Statement stmt = conn.createStatement()) {
+            int deleted = stmt.executeUpdate(cleanupSQL);
+            log.debug("processAllPending cleanup: {} registros removidos da {}", deleted, ingest);
+        }
+
         log.info("processAllPending concluído. table={}", target);
     }
 
@@ -172,12 +190,35 @@ public class InlineProcessor {
      * Chamado pelo StageCopyWriter logo após processBlock() — sem delay, sem cron.
      */
     public void cleanupBlock(Connection conn, String blockId) throws Exception {
-        String sql = "DELETE FROM " + config.getIngestTable() + " WHERE KFK_BLOCKID = '" + blockId + "'";
+        int cleanupDelaySeconds = config.getIngestCleanupDelaySeconds();
+        String sql = "DELETE FROM " + config.getIngestTable()
+                + " WHERE KFK_BLOCKID = '" + blockId + "'"
+                + " AND KFK_DATETIME <= DATEADD('SECOND', -" + cleanupDelaySeconds + ", CURRENT_TIMESTAMP())";
         log.debug("cleanupBlock SQL: {}", sql);
         try (Statement stmt = conn.createStatement()) {
             int deleted = stmt.executeUpdate(sql);
             log.debug("cleanupBlock: {} registros removidos da {} (blockId={})",
                     deleted, config.getIngestTable(), blockId);
+        }
+    }
+
+    /**
+     * Remove da _INGEST registros com idade maior que ingest.cleanup.delay.seconds.
+     * Usado no modo STAGE para limpar blocos antigos quando cleanup delay > 0.
+     */
+    public void cleanupExpiredRows(Connection conn) throws Exception {
+        int cleanupDelaySeconds = config.getIngestCleanupDelaySeconds();
+        if (cleanupDelaySeconds <= 0) {
+            return;
+        }
+
+        String sql = "DELETE FROM " + config.getIngestTable()
+                + " WHERE KFK_DATETIME <= DATEADD('SECOND', -" + cleanupDelaySeconds + ", CURRENT_TIMESTAMP())";
+        log.debug("cleanupExpiredRows SQL: {}", sql);
+        try (Statement stmt = conn.createStatement()) {
+            int deleted = stmt.executeUpdate(sql);
+            log.debug("cleanupExpiredRows: {} registros removidos da {}",
+                    deleted, config.getIngestTable());
         }
     }
 

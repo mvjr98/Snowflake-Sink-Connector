@@ -95,8 +95,9 @@ public class StageCopyWriter implements IngestWriter {
         // 4. INSERT / UPDATE / DELETE da _INGEST para a tabela final
         inlineProcessor.processBlock(connection, blockId);
 
-        // 5. Remove o blockId da _INGEST (cleanup imediato, sem cron)
+        // 5. Cleanup da _INGEST (imediato por bloco ou com delay configurável)
         inlineProcessor.cleanupBlock(connection, blockId);
+        inlineProcessor.cleanupExpiredRows(connection);
 
         log.info("StageCopyWriter: batch processado — {} registros, blockId={}", records.size(), blockId);
     }

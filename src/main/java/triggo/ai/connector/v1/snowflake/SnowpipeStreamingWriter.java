@@ -10,7 +10,7 @@ import net.snowflake.ingest.streaming.SnowflakeStreamingIngestClientFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -115,7 +115,7 @@ public class SnowpipeStreamingWriter implements IngestWriter {
         row.put("KFK_PARTITION", record.getPartition());
         row.put("KFK_OFFSET",    record.getOffset());
         row.put("KFK_OP",        record.getOp());
-        row.put("KFK_DATETIME",  new Timestamp(record.getTsMs()));
+        row.put("KFK_DATETIME",  Instant.ofEpochMilli(record.getTsMs()).toString());
         row.put("KFK_BLOCKID",   record.getBlockId());
 
         return row;

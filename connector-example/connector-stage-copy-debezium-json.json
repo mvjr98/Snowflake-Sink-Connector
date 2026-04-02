@@ -13,10 +13,11 @@
 
     "snowflake.url":         "https://<ACCOUNT>.snowflakecomputing.com",
     "snowflake.user":        "KAFKA_USER",
-    "snowflake.private.key": "MIIEvQIBADANBgkqhkiG9w0BAQEFAASC...",
+    "snowflake.private.key": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----",
     "snowflake.database":    "LZ_SQL_IH_PRD",
     "snowflake.schema":      "GCOB001D",
     "snowflake.table":       "NTFE001D",
+    "ingest.cleanup.delay.seconds": "0",
 
     "buffer.count.records": "10000",
     "buffer.flush.time":    "120",
