@@ -24,7 +24,7 @@ public class SnowflakeConnectionHelper {
     private SnowflakeConnectionHelper() {}
 
     // -------------------------------------------------------------------------
-    // JDBC — private key RSA (STAGE_COPY + InlineProcessor + processamento assíncrono)
+    // JDBC — private key RSA (STAGE + InlineProcessor + processamento assíncrono)
     // -------------------------------------------------------------------------
 
     /**

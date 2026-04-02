@@ -18,7 +18,7 @@ import java.util.stream.Collectors;
  *
  * Dois modos de operação:
  *
- * 1. processBlock(conn, blockId) — para STAGE_COPY
+ * 1. processBlock(conn, blockId) — para STAGE
  *    Chamado logo após o COPY INTO, processa um blockId específico com 3 SQLs:
  *    INSERT (c/r), UPDATE (u), DELETE (d).
  *
@@ -35,7 +35,7 @@ public class InlineProcessor {
 
     private final SnowflakeSinkConfig config;
 
-    /** Colunas de negócio da tabela final (sem prefixo IH_). Lazy-loaded. */
+    /** Colunas de negócio da tabela final (sem prefixo KFK_). Lazy-loaded. */
     private List<String> businessColumns;
 
     /** Colunas de negócio que não são PK (usadas no SET do UPDATE). */
@@ -49,7 +49,7 @@ public class InlineProcessor {
     }
 
     // -------------------------------------------------------------------------
-    // Modo STAGE_COPY: processBlock por blockId (síncrono, no flush)
+    // Modo STAGE: processBlock por blockId (síncrono, no flush)
     // -------------------------------------------------------------------------
 
     /**
@@ -70,7 +70,7 @@ public class InlineProcessor {
             // --- INSERT para operações c (create) e r (snapshot) ---
             String cols   = String.join(", ", businessColumns);
             String insert = String.format(
-                "INSERT INTO %s (%s) SELECT %s FROM %s WHERE IH_BLOCKID = '%s' AND IH_OP IN ('c', 'r')",
+                "INSERT INTO %s (%s) SELECT %s FROM %s WHERE KFK_BLOCKID = '%s' AND KFK_OP IN ('c', 'r')",
                 target, cols, cols, ingest, blockId);
             int inserted = stmt.executeUpdate(insert);
 
@@ -82,7 +82,7 @@ public class InlineProcessor {
                 String pkWhere = buildPkJoin(pks, "final", "src");
                 String update = String.format(
                     "UPDATE %s AS final SET %s FROM " +
-                    "(SELECT * FROM %s WHERE IH_BLOCKID = '%s' AND IH_OP = 'u') AS src WHERE %s",
+                    "(SELECT * FROM %s WHERE KFK_BLOCKID = '%s' AND KFK_OP = 'u') AS src WHERE %s",
                     target, setClause, ingest, blockId, pkWhere);
                 int updated = stmt.executeUpdate(update);
                 log.debug("blockId={}: INSERT={}, UPDATE={}", blockId, inserted, updated);
@@ -95,7 +95,7 @@ public class InlineProcessor {
             String pkWhere = buildPkJoin(pks, "final", "src");
             String delete = String.format(
                 "DELETE FROM %s AS final USING " +
-                "(SELECT %s FROM %s WHERE IH_BLOCKID = '%s' AND IH_OP = 'd') AS src WHERE %s",
+                "(SELECT %s FROM %s WHERE KFK_BLOCKID = '%s' AND KFK_OP = 'd') AS src WHERE %s",
                 target, pkCols, ingest, blockId, pkWhere);
             int deleted = stmt.executeUpdate(delete);
             log.debug("blockId={}: DELETE={}", blockId, deleted);
@@ -134,10 +134,10 @@ public class InlineProcessor {
         StringBuilder merge = new StringBuilder();
         merge.append("MERGE INTO ").append(target).append(" AS tgt\n");
         merge.append("USING (\n");
-        merge.append("    SELECT ").append(colList).append(", IH_OP FROM (\n");
+        merge.append("    SELECT ").append(colList).append(", KFK_OP FROM (\n");
         merge.append("        SELECT src_inner.*, ROW_NUMBER() OVER (\n");
         merge.append("            PARTITION BY ").append(pkPartition).append("\n");
-        merge.append("            ORDER BY IH_OFFSET DESC, IH_PARTITION DESC\n");
+        merge.append("            ORDER BY KFK_OFFSET DESC, KFK_PARTITION DESC\n");
         merge.append("        ) AS rn\n");
         merge.append("        FROM ").append(ingest).append(" AS src_inner\n");
         merge.append("        LIMIT ").append(batchSize).append("\n");
@@ -146,12 +146,12 @@ public class InlineProcessor {
         merge.append("ON (").append(pkJoin).append(")\n");
 
         if (!nonPkColumns.isEmpty()) {
-            merge.append("WHEN MATCHED AND src.IH_OP IN ('c', 'r', 'u') THEN UPDATE SET ").append(setClause).append("\n");
+            merge.append("WHEN MATCHED AND src.KFK_OP IN ('c', 'r', 'u') THEN UPDATE SET ").append(setClause).append("\n");
         }
 
-        merge.append("WHEN NOT MATCHED AND src.IH_OP IN ('c', 'r') THEN INSERT (").append(colList).append(")\n");
+        merge.append("WHEN NOT MATCHED AND src.KFK_OP IN ('c', 'r') THEN INSERT (").append(colList).append(")\n");
         merge.append("    VALUES (").append(srcColList).append(")\n");
-        merge.append("WHEN MATCHED AND src.IH_OP = 'd' THEN DELETE");
+        merge.append("WHEN MATCHED AND src.KFK_OP = 'd' THEN DELETE");
 
         String mergeSQL = merge.toString();
         log.debug("MERGE SQL:\n{}", mergeSQL);
@@ -172,7 +172,7 @@ public class InlineProcessor {
      * Chamado pelo StageCopyWriter logo após processBlock() — sem delay, sem cron.
      */
     public void cleanupBlock(Connection conn, String blockId) throws Exception {
-        String sql = "DELETE FROM " + config.getIngestTable() + " WHERE IH_BLOCKID = '" + blockId + "'";
+        String sql = "DELETE FROM " + config.getIngestTable() + " WHERE KFK_BLOCKID = '" + blockId + "'";
         log.debug("cleanupBlock SQL: {}", sql);
         try (Statement stmt = conn.createStatement()) {
             int deleted = stmt.executeUpdate(sql);

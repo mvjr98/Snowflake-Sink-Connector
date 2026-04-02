@@ -40,7 +40,7 @@ public class SnowflakeSinkConfig extends AbstractConfig {
 
     /**
      * Intervalo em segundos entre execuções do processamento _INGEST → final.
-     * Usado apenas no modo SNOWPIPE_STREAMING (STAGE_COPY processa de forma síncrona).
+     * Usado apenas no modo SNOWPIPE_STREAMING (STAGE processa de forma síncrona).
      */
     public static final String JOB_INTERVAL_SECONDS  = "job.interval.seconds";
 
@@ -61,7 +61,7 @@ public class SnowflakeSinkConfig extends AbstractConfig {
     // Enums
     // -------------------------------------------------------------------------
 
-    public enum IngestionMode { SNOWPIPE_STREAMING, STAGE_COPY }
+    public enum IngestionMode { SNOWPIPE_STREAMING, STAGE }
 
     // -------------------------------------------------------------------------
     // Definição do ConfigDef
@@ -103,10 +103,11 @@ public class SnowflakeSinkConfig extends AbstractConfig {
 
             // --- Modo de ingestão ---
             .define(INGESTION_MODE,
-                    Type.STRING, "STAGE_COPY",
-                    ConfigDef.ValidString.in("SNOWPIPE_STREAMING", "STAGE_COPY"),
+                    Type.STRING, "STAGE",
+                    ConfigDef.ValidString.in("SNOWPIPE_STREAMING", "STAGE", "STAGE_COPY"),
                     Importance.MEDIUM,
-                    "Modo de ingestão. STAGE_COPY (padrão) ou SNOWPIPE_STREAMING.")
+                    "Modo de ingestão. STAGE (padrão) ou SNOWPIPE_STREAMING. " +
+                    "STAGE_COPY é aceito apenas por retrocompatibilidade.")
 
             // --- PK ---
             .define(PK_FIELDS,
@@ -182,7 +183,13 @@ public class SnowflakeSinkConfig extends AbstractConfig {
     /** Nome da tabela de staging: <TABLE>_INGEST */
     public String getIngestTable()         { return getSnowflakeTable() + "_INGEST"; }
 
-    public IngestionMode getIngestionMode() { return IngestionMode.valueOf(getString(INGESTION_MODE)); }
+    public IngestionMode getIngestionMode() {
+        String raw = getString(INGESTION_MODE);
+        if ("STAGE_COPY".equalsIgnoreCase(raw)) {
+            return IngestionMode.STAGE;
+        }
+        return IngestionMode.valueOf(raw.toUpperCase());
+    }
 
     public List<String> getPkFields() {
         String raw = getString(PK_FIELDS).trim();

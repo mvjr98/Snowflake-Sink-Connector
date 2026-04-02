@@ -76,7 +76,7 @@ public class SnowflakeSinkTask extends SinkTask {
         }
 
         // Apenas SNOWPIPE_STREAMING precisa de processamento assíncrono.
-        // STAGE_COPY processa de forma síncrona dentro de write().
+        // STAGE processa de forma síncrona dentro de write().
         if (config.getIngestionMode() == SnowflakeSinkConfig.IngestionMode.SNOWPIPE_STREAMING) {
             startAsyncProcessor();
         }
@@ -165,7 +165,7 @@ public class SnowflakeSinkTask extends SinkTask {
     private IngestWriter buildWriter() {
         return switch (config.getIngestionMode()) {
             case SNOWPIPE_STREAMING -> new SnowpipeStreamingWriter(config);
-            case STAGE_COPY         -> new StageCopyWriter(config);
+            case STAGE              -> new StageCopyWriter(config);
         };
     }
 
@@ -221,10 +221,10 @@ public class SnowflakeSinkTask extends SinkTask {
 
     /**
      * Estima o tamanho em bytes de um registro a partir dos seus campos de negócio.
-     * Soma o comprimento dos nomes e valores das colunas + overhead fixo para metadados IH_.
+     * Soma o comprimento dos nomes e valores das colunas + overhead fixo para metadados KFK_.
      */
     private long estimateBytes(ParsedRecord record) {
-        long size = 100; // overhead fixo (IH_TOPIC, IH_PARTITION, IH_OFFSET, IH_OP, IH_DATETIME, IH_BLOCKID)
+        long size = 100; // overhead fixo (KFK_TOPIC, KFK_PARTITION, KFK_OFFSET, KFK_OP, KFK_DATETIME, KFK_BLOCKID)
         if (record.getFields() != null) {
             for (Map.Entry<String, Object> entry : record.getFields().entrySet()) {
                 size += entry.getKey().length();

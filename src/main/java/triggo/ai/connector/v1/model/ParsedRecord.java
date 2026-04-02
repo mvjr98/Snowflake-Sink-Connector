@@ -4,7 +4,7 @@ import java.util.Map;
 
 /**
  * DTO que representa um registro já parseado, pronto para ser gravado no Snowflake.
- * Contém os campos de negócio + metadados de controle (IH_*).
+ * Contém os campos de negócio + metadados de controle (KFK_*).
  */
 public class ParsedRecord {
 

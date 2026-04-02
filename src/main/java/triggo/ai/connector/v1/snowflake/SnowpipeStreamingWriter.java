@@ -111,12 +111,12 @@ public class SnowpipeStreamingWriter implements IngestWriter {
             row.putAll(record.getFields());
         }
 
-        row.put("IH_TOPIC",     record.getTopic());
-        row.put("IH_PARTITION", record.getPartition());
-        row.put("IH_OFFSET",    record.getOffset());
-        row.put("IH_OP",        record.getOp());
-        row.put("IH_DATETIME",  new Timestamp(record.getTsMs()));
-        row.put("IH_BLOCKID",   record.getBlockId());
+        row.put("KFK_TOPIC",     record.getTopic());
+        row.put("KFK_PARTITION", record.getPartition());
+        row.put("KFK_OFFSET",    record.getOffset());
+        row.put("KFK_OP",        record.getOp());
+        row.put("KFK_DATETIME",  new Timestamp(record.getTsMs()));
+        row.put("KFK_BLOCKID",   record.getBlockId());
 
         return row;
     }

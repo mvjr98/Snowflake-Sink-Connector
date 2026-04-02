@@ -104,20 +104,20 @@ PK vem da Kafka message key (também em AVRO).
 Campos de negócio + metadados de controle:
 
 ```sql
--- Metadados obrigatórios (prefixo IH_)
-IH_TOPIC     VARCHAR(255) NOT NULL,
-IH_PARTITION INT NOT NULL,
-IH_OFFSET    INT NOT NULL,
-IH_OP        VARCHAR(1) NOT NULL,      -- c, u, d, r
-IH_DATETIME  TIMESTAMP NOT NULL,
-IH_BLOCKID   VARCHAR(40) NOT NULL,     -- UUID do batch
+-- Metadados obrigatórios (prefixo KFK_)
+KFK_TOPIC     VARCHAR(255) NOT NULL,
+KFK_PARTITION INT NOT NULL,
+KFK_OFFSET    INT NOT NULL,
+KFK_OP        VARCHAR(1) NOT NULL,      -- c, u, d, r
+KFK_DATETIME  TIMESTAMP NOT NULL,
+KFK_BLOCKID   VARCHAR(40) NOT NULL,     -- UUID do batch
 
 -- PK da INGEST (evita duplicata)
-CONSTRAINT pkey PRIMARY KEY (IH_TOPIC, IH_PARTITION, IH_OFFSET)
+CONSTRAINT pkey PRIMARY KEY (KFK_TOPIC, KFK_PARTITION, KFK_OFFSET)
 ```
 
 ### Tabela target (final)
-Apenas campos de negócio, sem metadados IH_.
+Apenas campos de negócio, sem metadados KFK_.
 
 ---
 

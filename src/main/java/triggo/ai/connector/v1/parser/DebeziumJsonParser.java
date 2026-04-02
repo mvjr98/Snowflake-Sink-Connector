@@ -8,6 +8,9 @@ import org.apache.kafka.connect.sink.SinkRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -30,12 +33,14 @@ public class DebeziumJsonParser implements PayloadParser {
 
     @Override
     public ParsedRecord parse(SinkRecord record) {
-        JsonNode payload = extractPayload(record.value());
+        JsonNode root = toJsonNode(record.value());
+        JsonNode payload = extractPayload(root);
 
         String op   = payload.path("op").asText("c");
         long   tsMs = payload.path("ts_ms").asLong(System.currentTimeMillis());
 
-        Map<String, Object> fields = extractBusinessFields(payload, op);
+        Map<String, String> logicalTypes = extractLogicalTypes(root, op);
+        Map<String, Object> fields = extractBusinessFields(payload, op, logicalTypes);
 
         ParsedRecord parsed = new ParsedRecord();
         parsed.setFields(fields);
@@ -51,8 +56,7 @@ public class DebeziumJsonParser implements PayloadParser {
     /**
      * Extrai o nó de payload, desembrulhando o envelope com schema se necessário.
      */
-    private JsonNode extractPayload(Object value) {
-        JsonNode root = toJsonNode(value);
+    private JsonNode extractPayload(JsonNode root) {
 
         // Formato com envelope: { "schema": {...}, "payload": {...} }
         if (root.has("schema") && root.has("payload")) {
@@ -92,7 +96,7 @@ public class DebeziumJsonParser implements PayloadParser {
      * Extrai os campos de negócio do nó after (ou before para deletes).
      */
     @SuppressWarnings("unchecked")
-    private Map<String, Object> extractBusinessFields(JsonNode payload, String op) {
+    private Map<String, Object> extractBusinessFields(JsonNode payload, String op, Map<String, String> logicalTypes) {
         JsonNode dataNode = "d".equals(op) ? payload.path("before") : payload.path("after");
 
         if (dataNode.isMissingNode() || dataNode.isNull()) {
@@ -101,9 +105,74 @@ public class DebeziumJsonParser implements PayloadParser {
         }
 
         try {
-            return MAPPER.convertValue(dataNode, LinkedHashMap.class);
+            Map<String, Object> fields = MAPPER.convertValue(dataNode, LinkedHashMap.class);
+            normalizeLogicalTypes(fields, logicalTypes);
+            return fields;
         } catch (Exception e) {
             throw new RuntimeException("DebeziumJsonParser: falha ao converter campos de negócio", e);
+        }
+    }
+
+    private Map<String, String> extractLogicalTypes(JsonNode root, String op) {
+        Map<String, String> logicalTypes = new LinkedHashMap<>();
+        if (!root.has("schema")) {
+            return logicalTypes;
+        }
+
+        JsonNode schema = root.path("schema");
+        JsonNode envelopeFields = schema.path("fields");
+        if (!envelopeFields.isArray()) {
+            return logicalTypes;
+        }
+
+        String dataField = "d".equals(op) ? "before" : "after";
+        for (JsonNode envelopeField : envelopeFields) {
+            if (!dataField.equals(envelopeField.path("field").asText())) {
+                continue;
+            }
+
+            JsonNode rowFields = envelopeField.path("fields");
+            if (!rowFields.isArray()) {
+                return logicalTypes;
+            }
+
+            for (JsonNode rowField : rowFields) {
+                String fieldName = rowField.path("field").asText("");
+                String logicalName = rowField.path("name").asText("");
+                if (!fieldName.isBlank() && !logicalName.isBlank()) {
+                    logicalTypes.put(fieldName, logicalName);
+                }
+            }
+            break;
+        }
+
+        return logicalTypes;
+    }
+
+    private void normalizeLogicalTypes(Map<String, Object> fields, Map<String, String> logicalTypes) {
+        if (fields.isEmpty() || logicalTypes.isEmpty()) {
+            return;
+        }
+
+        for (Map.Entry<String, String> entry : logicalTypes.entrySet()) {
+            String field = entry.getKey();
+            Object value = fields.get(field);
+            if (!(value instanceof Number)) {
+                continue;
+            }
+
+            String logical = entry.getValue();
+            Number number = (Number) value;
+
+            if ("io.debezium.time.Date".equals(logical)) {
+                fields.put(field, LocalDate.ofEpochDay(number.longValue()).toString());
+            } else if ("io.debezium.time.Timestamp".equals(logical)) {
+                fields.put(field, Instant.ofEpochMilli(number.longValue()).atOffset(ZoneOffset.UTC).toString());
+            } else if ("io.debezium.time.MicroTimestamp".equals(logical)) {
+                fields.put(field, Instant.ofEpochMilli(number.longValue() / 1000L).atOffset(ZoneOffset.UTC).toString());
+            } else if ("io.debezium.time.NanoTimestamp".equals(logical)) {
+                fields.put(field, Instant.ofEpochMilli(number.longValue() / 1_000_000L).atOffset(ZoneOffset.UTC).toString());
+            }
         }
     }
 }

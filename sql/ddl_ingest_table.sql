@@ -25,26 +25,26 @@ CREATE TABLE IF NOT EXISTS <TABLE>_INGEST (
     -- ... adicione as demais colunas aqui ...
 
     -- =========================================================================
-    -- Metadados de controle (prefixo IH_)
+    -- Metadados de controle (prefixo KFK_)
     -- =========================================================================
-    IH_TOPIC            VARCHAR(255)    NOT NULL,
-    IH_PARTITION        INT             NOT NULL,
-    IH_OFFSET           NUMBER(38, 0)   NOT NULL,
-    IH_OP               VARCHAR(1)      NOT NULL,   -- c, r, u, d
-    IH_DATETIME         TIMESTAMP_NTZ   NOT NULL,
-    IH_BLOCKID          VARCHAR(40)     NOT NULL,
+    KFK_TOPIC           VARCHAR(255)    NOT NULL,
+    KFK_PARTITION       INT             NOT NULL,
+    KFK_OFFSET          NUMBER(38, 0)   NOT NULL,
+    KFK_OP              VARCHAR(1)      NOT NULL,   -- c, r, u, d
+    KFK_DATETIME        TIMESTAMP_NTZ   NOT NULL,
+    KFK_BLOCKID         VARCHAR(40)     NOT NULL,
 
     -- =========================================================================
     -- PK da tabela de staging (evita duplicatas por offset)
     -- =========================================================================
-    CONSTRAINT PK_<TABLE>_INGEST PRIMARY KEY (IH_TOPIC, IH_PARTITION, IH_OFFSET)
+    CONSTRAINT PK_<TABLE>_INGEST PRIMARY KEY (KFK_TOPIC, KFK_PARTITION, KFK_OFFSET)
 
 );
 
--- Índice auxiliar para o MERGE (acelera a busca por IH_OP)
+-- Índice auxiliar para o MERGE (acelera a busca por KFK_OP)
 -- (Snowflake não tem índices convencionais, mas clustering key pode ajudar
 --  em tabelas grandes)
--- ALTER TABLE <TABLE>_INGEST CLUSTER BY (IH_OP, IH_BLOCKID);
+-- ALTER TABLE <TABLE>_INGEST CLUSTER BY (KFK_OP, KFK_BLOCKID);
 
 -- =============================================================================
 -- DDL: Tabela target (final) — apenas colunas de negócio

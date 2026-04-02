@@ -10,12 +10,16 @@ import org.slf4j.LoggerFactory;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.sql.DatabaseMetaData;
 import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -38,6 +42,7 @@ public class StageCopyWriter implements IngestWriter {
 
     private final SnowflakeSinkConfig config;
     private final String stageName;
+    private final Map<String, String> ingestColumnTypes = new HashMap<>();
 
     private Connection connection;
     private SnowflakeConnection snowflakeConnection;
@@ -45,7 +50,7 @@ public class StageCopyWriter implements IngestWriter {
 
     public StageCopyWriter(SnowflakeSinkConfig config) {
         this.config    = config;
-        this.stageName = "STAGE_" + config.getSnowflakeTable() + "_SINK";
+        this.stageName = config.getSnowflakeTable();
     }
 
     @Override
@@ -60,6 +65,7 @@ public class StageCopyWriter implements IngestWriter {
 
         inlineProcessor = new InlineProcessor(config);
 
+        loadIngestColumnTypes();
         ensureStageExists();
         log.info("StageCopyWriter pronto.");
     }
@@ -121,16 +127,9 @@ public class StageCopyWriter implements IngestWriter {
     // -------------------------------------------------------------------------
 
     private void copyIntoIngest(String fileName, List<String> columns) throws Exception {
-        // Mapeia cada coluna para o campo correspondente no JSON ($1:COLNAME)
         List<String> selectParts = new ArrayList<>();
         for (String col : columns) {
-            if (col.equals("IH_PARTITION") || col.equals("IH_OFFSET")) {
-                selectParts.add("$1:" + col + "::INT");
-            } else if (col.equals("IH_DATETIME")) {
-                selectParts.add("$1:" + col + "::TIMESTAMP_NTZ");
-            } else {
-                selectParts.add("$1:" + col + "::STRING");
-            }
+            selectParts.add(buildSelectExpression(col));
         }
 
         String colDef    = String.join(", ", columns);
@@ -145,6 +144,99 @@ public class StageCopyWriter implements IngestWriter {
         try (Statement stmt = connection.createStatement()) {
             stmt.execute(sql);
         }
+    }
+
+    private void loadIngestColumnTypes() throws Exception {
+        String db = config.getSnowflakeDatabase().toUpperCase(Locale.ROOT);
+        String schema = config.getSnowflakeSchema().toUpperCase(Locale.ROOT);
+        String table = config.getIngestTable().toUpperCase(Locale.ROOT);
+
+        DatabaseMetaData meta = connection.getMetaData();
+        try (ResultSet rs = meta.getColumns(db, schema, table, null)) {
+            while (rs.next()) {
+                ingestColumnTypes.put(
+                        rs.getString("COLUMN_NAME").toUpperCase(Locale.ROOT),
+                        rs.getString("TYPE_NAME").toUpperCase(Locale.ROOT)
+                );
+            }
+        }
+
+        if (ingestColumnTypes.isEmpty()) {
+            throw new RuntimeException("StageCopyWriter: nenhuma coluna encontrada em " + config.getIngestTable()
+                    + ". Verifique se a tabela _INGEST existe e se as credenciais têm acesso.");
+        }
+    }
+
+    private String buildSelectExpression(String col) {
+        String jsonRef = "$1:" + col;
+        String typeName = ingestColumnTypes.getOrDefault(col.toUpperCase(Locale.ROOT), "VARCHAR");
+
+        if (isNumberType(typeName)) {
+            return "TRY_TO_NUMBER(" + jsonRef + "::STRING)";
+        }
+        if (isFloatType(typeName)) {
+            return "TRY_TO_DOUBLE(" + jsonRef + "::STRING)";
+        }
+        if (isBooleanType(typeName)) {
+            return "TRY_TO_BOOLEAN(" + jsonRef + "::STRING)";
+        }
+        if (isDateType(typeName)) {
+            return "CASE "
+                    + "WHEN TRY_TO_NUMBER(" + jsonRef + "::STRING) IS NULL THEN TRY_TO_DATE(" + jsonRef + "::STRING) "
+                    + "WHEN ABS(TRY_TO_NUMBER(" + jsonRef + "::STRING)) > 1000000 "
+                    + "THEN TO_DATE(TO_TIMESTAMP_NTZ(TRY_TO_NUMBER(" + jsonRef + "::STRING) / 1000)) "
+                    + "ELSE DATEADD('day', TRY_TO_NUMBER(" + jsonRef + "::STRING), '1970-01-01'::DATE) END";
+        }
+        if (isTimestampType(typeName)) {
+            return "TRY_TO_TIMESTAMP_NTZ(" + jsonRef + "::STRING)";
+        }
+        if (isTimeType(typeName)) {
+            return "TRY_TO_TIME(" + jsonRef + "::STRING)";
+        }
+        if (isBinaryType(typeName)) {
+            return "TRY_TO_BINARY(" + jsonRef + "::STRING)";
+        }
+        if (isVariantType(typeName)) {
+            return jsonRef;
+        }
+
+        return jsonRef + "::STRING";
+    }
+
+    private boolean isNumberType(String typeName) {
+        return typeName.contains("NUMBER")
+                || typeName.contains("DECIMAL")
+                || typeName.contains("NUMERIC")
+                || typeName.contains("INT")
+                || typeName.contains("BYTEINT");
+    }
+
+    private boolean isFloatType(String typeName) {
+        return typeName.contains("FLOAT") || typeName.contains("DOUBLE") || typeName.contains("REAL");
+    }
+
+    private boolean isBooleanType(String typeName) {
+        return typeName.contains("BOOLEAN");
+    }
+
+    private boolean isDateType(String typeName) {
+        return "DATE".equals(typeName);
+    }
+
+    private boolean isTimestampType(String typeName) {
+        return typeName.contains("TIMESTAMP");
+    }
+
+    private boolean isTimeType(String typeName) {
+        return typeName.equals("TIME");
+    }
+
+    private boolean isBinaryType(String typeName) {
+        return typeName.contains("BINARY");
+    }
+
+    private boolean isVariantType(String typeName) {
+        return typeName.contains("VARIANT") || typeName.contains("OBJECT") || typeName.contains("ARRAY");
     }
 
     // -------------------------------------------------------------------------
@@ -167,12 +259,12 @@ public class StageCopyWriter implements IngestWriter {
             row.putAll(record.getFields());
         }
 
-        row.put("IH_TOPIC",     record.getTopic());
-        row.put("IH_PARTITION", record.getPartition());
-        row.put("IH_OFFSET",    record.getOffset());
-        row.put("IH_OP",        record.getOp());
-        row.put("IH_DATETIME",  Instant.ofEpochMilli(record.getTsMs()).toString());
-        row.put("IH_BLOCKID",   record.getBlockId());
+        row.put("KFK_TOPIC",     record.getTopic());
+        row.put("KFK_PARTITION", record.getPartition());
+        row.put("KFK_OFFSET",    record.getOffset());
+        row.put("KFK_OP",        record.getOp());
+        row.put("KFK_DATETIME",  Instant.ofEpochMilli(record.getTsMs()).toString());
+        row.put("KFK_BLOCKID",   record.getBlockId());
 
         return row;
     }
@@ -182,12 +274,12 @@ public class StageCopyWriter implements IngestWriter {
         if (record.getFields() != null) {
             columns.addAll(record.getFields().keySet());
         }
-        columns.add("IH_TOPIC");
-        columns.add("IH_PARTITION");
-        columns.add("IH_OFFSET");
-        columns.add("IH_OP");
-        columns.add("IH_DATETIME");
-        columns.add("IH_BLOCKID");
+        columns.add("KFK_TOPIC");
+        columns.add("KFK_PARTITION");
+        columns.add("KFK_OFFSET");
+        columns.add("KFK_OP");
+        columns.add("KFK_DATETIME");
+        columns.add("KFK_BLOCKID");
         return columns;
     }
 }

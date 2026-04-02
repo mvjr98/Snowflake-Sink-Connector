@@ -6,6 +6,8 @@
 
     "topics": "debezium.GCOB001D.dbo.NTFE001D",
 
+    "ingestion.mode": "STAGE",
+
     "key.converter":   "org.apache.kafka.connect.storage.StringConverter",
     "value.converter": "org.apache.kafka.connect.storage.StringConverter",
 
