@@ -19,4 +19,10 @@ target/
 # OS
 .DS_Store
 Thumbs.db
-apache-maven-3.9.6/\napache-maven-3.9.6-bin.tar.gz
+
+# Local infra/tooling (nao versionar)
+infra/
+data-engineer-streaming/
+apache-maven-3.9.6/
+apache-maven-3.9.6-bin.tar.gz
+snowflake-sink-connector-1.0.0.jar

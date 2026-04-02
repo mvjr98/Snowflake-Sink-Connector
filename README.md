@@ -105,6 +105,19 @@ Chave primaria recomendada na `_INGEST`:
 PRIMARY KEY (KFK_TOPIC, KFK_PARTITION, KFK_OFFSET)
 ```
 
+## Setup de seguranca no Snowflake
+
+Scripts em `sql/`:
+
+- `sql/00_security_and_grants.sql`: cria role/usuario, grants em warehouse, database/schema, `CREATE STAGE` e grants em `ALL/FUTURE TABLES` (evita grant manual por tabela nova)
+- `sql/ddl_ingest_table.sql`: cria `<TABLE>_INGEST` e `<TABLE>`
+
+Ordem recomendada:
+
+1. executar `sql/00_security_and_grants.sql`
+2. executar `sql/ddl_ingest_table.sql` para cada tabela replicada
+3. executar `ALTER USER ... SET RSA_PUBLIC_KEY` com a chave publica do usuario de servico
+
 ## Configuracao principal do connector
 
 Exemplo minimo:
