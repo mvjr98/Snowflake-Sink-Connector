@@ -27,7 +27,7 @@ Construir um Kafka Connect Sink Connector customizado em Java/Maven que:
 ### 1. FLAT_JSON
 JSON simples sem envelope Debezium. PK configurada manualmente via `pk.fields`.
 ```json
-{ "IDT_UNC_TSC": 123, "NOME": "foo" }
+{ "ORDER_ID": 10248, "CUSTOMER_ID": "VINET" }
 ```
 
 ### 2. DEBEZIUM_JSON (sem schema)
@@ -35,7 +35,7 @@ Envelope Debezium sem bloco de schema. PK vem da Kafka message key.
 ```json
 {
   "before": null,
-  "after": { "IDT_UNC_TSC": 123, "NOME": "foo" },
+  "after": { "ORDER_ID": 10248, "CUSTOMER_ID": "VINET" },
   "op": "c",
   "ts_ms": 1773324092574
 }
@@ -48,7 +48,7 @@ Envelope Debezium com bloco `schema` + `payload`. PK vem da Kafka message key.
   "schema": { "type": "struct", "fields": [...] },
   "payload": {
     "before": null,
-    "after": { "IDT_UNC_TSC": 123, "NOME": "foo" },
+    "after": { "ORDER_ID": 10248, "CUSTOMER_ID": "VINET" },
     "op": "c",
     "ts_ms": 1773324092574
   }
@@ -61,7 +61,7 @@ PK vem da Kafka message key (também em AVRO).
 
 **Exemplo de key:**
 ```json
-{ "IDT_UNC_TSC": 32571316, "IDT_SEQ_UNC": 1 }
+{ "ORDER_ID": 10248 }
 ```
 
 **Exemplo de value (após deserialização):**
@@ -69,16 +69,16 @@ PK vem da Kafka message key (também em AVRO).
 {
   "before": null,
   "after": {
-    "IDT_UNC_TSC": 32571316,
-    "IDT_SEQ_UNC": 1,
-    "NUM_UNC_PTB": "202603020000406987343"
+    "ORDER_ID": 10248,
+    "CUSTOMER_ID": "VINET",
+    "ORDER_DATE": "1996-07-04"
   },
   "source": {
     "version": "3.3.1.Final",
     "connector": "sqlserver",
-    "db": "GCOB001D",
-    "schema": "dbo",
-    "table": "GCOE007D"
+    "db": "northwind",
+    "schema": "public",
+    "table": "orders"
   },
   "op": "c",
   "ts_ms": 1773324092574
@@ -151,11 +151,11 @@ Configurado via `ingestion.mode` no JSON do conector.
 
 ```json
 {
-  "name": "snowflake-custom-sink-ntfe001d",
+  "name": "custom-snowflake-sink-orders-v1",
   "config": {
     "connector.class": "br.com.suaempresa.connector.SnowflakeSinkConnector",
     "tasks.max": "1",
-    "topics": "source-debezium-ntfe001d",
+    "topics": "cdc.public.orders",
 
     "payload.format": "AVRO",
     "ingestion.mode": "SNOWPIPE_STREAMING",
@@ -163,13 +163,13 @@ Configurado via `ingestion.mode` no JSON do conector.
     "snowflake.url": "https://account.snowflakecomputing.com",
     "snowflake.user": "USER",
     "snowflake.private.key": "...",
-    "snowflake.database": "LZ_SQL_IH_PRD",
-    "snowflake.schema": "GCOB001D",
-    "snowflake.table": "NTFE001D",
+    "snowflake.database": "RAW_KAFKA",
+    "snowflake.schema": "NORTHWIND",
+    "snowflake.table": "ORDERS",
 
     "schema.registry.url": "http://schema-registry:8081",
 
-    "pk.fields": "IDT_UNC_TSC,IDT_SEQ_UNC",
+    "pk.fields": "ORDER_ID",
 
     "merge.schedule.cron": "0/30 * * * * ?",
     "merge.batch.size": "10000"

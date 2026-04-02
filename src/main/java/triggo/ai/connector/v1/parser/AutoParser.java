@@ -103,7 +103,12 @@ public class AutoParser implements PayloadParser {
             if (value instanceof String) {
                 return MAPPER.readTree((String) value);
             }
-            return MAPPER.valueToTree(value);
+
+            // Evita dependência de TokenBuffer (valueToTree), que pode quebrar
+            // em runtime quando há conflito de versões jackson-core/databind
+            // no classpath do Kafka Connect.
+            byte[] json = MAPPER.writeValueAsBytes(value);
+            return MAPPER.readTree(json);
         } catch (Exception e) {
             throw new RuntimeException("AutoParser: falha ao parsear JSON: " + value, e);
         }

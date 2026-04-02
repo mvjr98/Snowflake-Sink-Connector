@@ -82,11 +82,19 @@ public class DebeziumJsonParser implements PayloadParser {
 
         if (value instanceof Struct) {
             Map<String, Object> map = FlatJsonParser.structToMap((Struct) value);
-            return MAPPER.valueToTree(map);
+            try {
+                return MAPPER.readTree(MAPPER.writeValueAsBytes(map));
+            } catch (Exception e) {
+                throw new RuntimeException("DebeziumJsonParser: falha ao converter Struct para JSON", e);
+            }
         }
 
         if (value instanceof Map) {
-            return MAPPER.valueToTree(value);
+            try {
+                return MAPPER.readTree(MAPPER.writeValueAsBytes(value));
+            } catch (Exception e) {
+                throw new RuntimeException("DebeziumJsonParser: falha ao converter Map para JSON", e);
+            }
         }
 
         throw new RuntimeException("DebeziumJsonParser: tipo de value não suportado: " + value.getClass().getName());

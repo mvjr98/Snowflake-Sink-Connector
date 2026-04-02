@@ -4,7 +4,7 @@ Connector customizado da Triggo.ai para Kafka Connect, focado em replicacao CDC 
 
 Site: [triggo.ai](https://triggo.ai)
 
-![Arquitetura do conector](./arquitetura_conector_snowflake.svg)
+![Arquitetura do conector](./arquitetura.png)
 
 ## O que este conector entrega
 
@@ -18,7 +18,7 @@ Site: [triggo.ai](https://triggo.ai)
 - Dois modos de ingestao:
   - `SNOWPIPE_STREAMING` (baixa latencia)
   - `STAGE` (compatibilidade com fluxo `COPY INTO`)
-- Cleanup configuravel da `_INGEST` via `ingest.cleanup.delay.seconds`
+- Cleanup configuravel da `_INGEST` via `ingest.cleanup.delay.seconds` e `ingest.cleanup.interval.seconds`
 
 ## Fluxo funcional
 
@@ -28,7 +28,7 @@ Site: [triggo.ai](https://triggo.ai)
    - `SnowpipeStreamingWriter` no modo `SNOWPIPE_STREAMING`
    - `StageCopyWriter` no modo `STAGE`
 4. `InlineProcessor` aplica dados na tabela final `<TABELA>`
-5. `_INGEST` e limpa conforme `ingest.cleanup.delay.seconds`
+5. `_INGEST` e limpa conforme politicas de cleanup configuradas
 
 ## Modos de ingestao
 
@@ -127,7 +127,8 @@ Exemplo minimo:
     "ingestion.mode": "SNOWPIPE_STREAMING",
     "job.interval.seconds": "30",
     "merge.batch.size": "10000",
-    "ingest.cleanup.delay.seconds": "0",
+    "ingest.cleanup.delay.seconds": "86400",
+    "ingest.cleanup.interval.seconds": "86400",
 
     "buffer.count.records": "1000",
     "buffer.flush.time": "60",
@@ -139,6 +140,28 @@ Exemplo minimo:
   }
 }
 ```
+
+## Parametros de latencia e custo
+
+- `buffer.count.records`: flush para `_INGEST` quando atingir N registros em memoria.
+- `buffer.size.bytes`: flush para `_INGEST` quando atingir N bytes em memoria.
+- `buffer.flush.time`: tempo maximo (segundos) para flush do buffer quando ha trafego continuo.
+- `job.interval.seconds`: intervalo do job assincrono `_INGEST -> final` (MERGE) no modo `SNOWPIPE_STREAMING`.
+- `merge.batch.size`: quantidade maxima de linhas lidas da `_INGEST` por execucao do MERGE.
+- `ingest.cleanup.delay.seconds`: idade minima dos registros para limpeza por expiracao na `_INGEST` (padrao 86400).
+- `ingest.cleanup.interval.seconds`: frequencia do cleanup por expiracao (padrao 86400 = 1x por dia).
+
+Notas importantes:
+
+- No modo `SNOWPIPE_STREAMING`, o conector agora pula MERGE quando `_INGEST` esta vazia.
+- O cleanup por lote processado no `SNOWPIPE_STREAMING` continua imediato para evitar reprocessamento.
+- O cleanup por expiracao roda no intervalo configurado em `ingest.cleanup.interval.seconds`.
+- `buffer.flush.time` nao e um scheduler independente: ele atua junto do fluxo de `put/flush` do Kafka Connect.
+
+Perfis sugeridos:
+
+- Baixa latencia: `buffer.flush.time=5..15`, `job.interval.seconds=5..15`, `merge.batch.size` ajustado por volume.
+- Menor custo: `buffer.flush.time=60..120`, `job.interval.seconds=60..300`, warehouse com auto-suspend curto.
 
 ## Autenticacao Snowflake (Key Pair)
 

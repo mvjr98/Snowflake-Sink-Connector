@@ -1,10 +1,10 @@
 {
-  "name": "snowflake-sink-flat-json-ntfe001d",
+  "name": "custom-snowflake-sink-orders-flat-json-v1",
   "config": {
     "connector.class": "triggo.ai.connector.v1.SnowflakeSinkConnector",
     "tasks.max": "1",
 
-    "topics": "meu-topico-flat",
+    "topics": "flat.public.orders",
 
     "key.converter":   "org.apache.kafka.connect.storage.StringConverter",
     "value.converter": "org.apache.kafka.connect.storage.StringConverter",
@@ -12,12 +12,13 @@
     "snowflake.url":         "https://<ACCOUNT>.snowflakecomputing.com",
     "snowflake.user":        "KAFKA_USER",
     "snowflake.private.key": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----",
-    "snowflake.database":    "LZ_SQL_IH_PRD",
-    "snowflake.schema":      "GCOB001D",
-    "snowflake.table":       "NTFE001D",
+    "snowflake.database":    "RAW_KAFKA",
+    "snowflake.schema":      "NORTHWIND",
+    "snowflake.table":       "ORDERS",
 
-    "pk.fields": "IDT_UNC_TSC,IDT_SEQ_UNC",
-    "ingest.cleanup.delay.seconds": "0",
+    "pk.fields": "ORDER_ID",
+    "ingest.cleanup.delay.seconds": "86400",
+    "ingest.cleanup.interval.seconds": "86400",
 
     "buffer.count.records": "10000",
     "buffer.flush.time":    "120",

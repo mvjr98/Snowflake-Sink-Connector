@@ -84,10 +84,10 @@ public class SnowflakeSinkTask extends SinkTask {
         lastFlushTimeMs = System.currentTimeMillis();
 
         log.info("SnowflakeSinkTask iniciada. table={}, mode={}, " +
-                 "buffer.count={}, buffer.flush.time={}s, buffer.size.bytes={}, ingest.cleanup.delay={}s",
+                 "buffer.count={}, buffer.flush.time={}s, buffer.size.bytes={}, ingest.cleanup.delay={}s, ingest.cleanup.interval={}s",
                 config.getIngestTable(), config.getIngestionMode(),
                 config.getBufferCountRecords(), config.getBufferFlushTime(), config.getBufferSizeBytes(),
-                config.getIngestCleanupDelaySeconds());
+                config.getIngestCleanupDelaySeconds(), config.getIngestCleanupIntervalSeconds());
     }
 
     /**

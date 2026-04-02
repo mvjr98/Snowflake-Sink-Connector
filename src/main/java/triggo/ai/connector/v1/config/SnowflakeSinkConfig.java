@@ -52,6 +52,12 @@ public class SnowflakeSinkConfig extends AbstractConfig {
      */
     public static final String INGEST_CLEANUP_DELAY_SECONDS = "ingest.cleanup.delay.seconds";
 
+    /**
+     * Intervalo em segundos para executar cleanup periódico da _INGEST.
+     * Útil para evitar DELETE de varredura em toda execução do job assíncrono.
+     */
+    public static final String INGEST_CLEANUP_INTERVAL_SECONDS = "ingest.cleanup.interval.seconds";
+
     // --- Buffer (inspirado no Snowflake Kafka Connector oficial) ---
 
     /** Número de registros acumulados em memória antes de enviar ao Snowflake. */
@@ -138,11 +144,18 @@ public class SnowflakeSinkConfig extends AbstractConfig {
                     "Número máximo de linhas processadas por execução (SNOWPIPE_STREAMING).")
 
             .define(INGEST_CLEANUP_DELAY_SECONDS,
-                    Type.INT, 0,
+                    Type.INT, 86400,
                     ConfigDef.Range.atLeast(0),
                     Importance.LOW,
                     "Delay em segundos para cleanup da _INGEST após processamento. " +
-                    "0 = imediato (padrão).")
+                    "Padrão: 86400 (1 dia).")
+
+            .define(INGEST_CLEANUP_INTERVAL_SECONDS,
+                    Type.INT, 86400,
+                    ConfigDef.Range.atLeast(0),
+                    Importance.LOW,
+                    "Intervalo em segundos do cleanup periódico da _INGEST. " +
+                    "Padrão: 86400 (1x por dia). 0 = executar sempre que chamado.")
 
             // --- Buffer ---
             .define(BUFFER_COUNT_RECORDS,
@@ -216,6 +229,7 @@ public class SnowflakeSinkConfig extends AbstractConfig {
     public int  getJobIntervalSeconds() { return getInt(JOB_INTERVAL_SECONDS); }
     public int  getMergeBatchSize()     { return getInt(MERGE_BATCH_SIZE); }
     public int  getIngestCleanupDelaySeconds() { return getInt(INGEST_CLEANUP_DELAY_SECONDS); }
+    public int  getIngestCleanupIntervalSeconds() { return getInt(INGEST_CLEANUP_INTERVAL_SECONDS); }
 
     public int  getBufferCountRecords() { return getInt(BUFFER_COUNT_RECORDS); }
     public int  getBufferFlushTime()    { return getInt(BUFFER_FLUSH_TIME); }

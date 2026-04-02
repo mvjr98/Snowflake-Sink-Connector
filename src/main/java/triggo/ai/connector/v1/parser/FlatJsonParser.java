@@ -12,7 +12,7 @@ import java.util.Map;
 
 /**
  * Parser para payloads JSON simples sem envelope Debezium.
- * Exemplo: { "IDT_UNC_TSC": 123, "NOME": "foo" }
+ * Exemplo: { "ORDER_ID": 10248, "CUSTOMER_ID": "VINET" }
  *
  * - A operação é sempre "c" (insert/upsert)
  * - A PK deve ser configurada manualmente via pk.fields

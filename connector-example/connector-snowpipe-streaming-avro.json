@@ -1,10 +1,10 @@
 {
-  "name": "snowflake-sink-snowpipe-gcob001d-ntfe001d",
+  "name": "custom-snowflake-sink-orders-avro-v1",
   "config": {
     "connector.class": "triggo.ai.connector.v1.SnowflakeSinkConnector",
     "tasks.max": "1",
 
-    "topics": "debezium.GCOB001D.dbo.NTFE001D",
+    "topics": "cdc.public.orders",
 
     "ingestion.mode": "SNOWPIPE_STREAMING",
 
@@ -16,12 +16,13 @@
     "snowflake.url":         "https://<ACCOUNT>.snowflakecomputing.com",
     "snowflake.user":        "KAFKA_USER",
     "snowflake.private.key": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----",
-    "snowflake.database":    "LZ_SQL_IH_PRD",
-    "snowflake.schema":      "GCOB001D",
-    "snowflake.table":       "NTFE001D",
+    "snowflake.database":    "RAW_KAFKA",
+    "snowflake.schema":      "NORTHWIND",
+    "snowflake.table":       "ORDERS",
 
     "job.interval.seconds": "30",
-    "ingest.cleanup.delay.seconds": "0",
+    "ingest.cleanup.delay.seconds": "86400",
+    "ingest.cleanup.interval.seconds": "86400",
 
     "buffer.count.records": "10000",
     "buffer.flush.time":    "120",

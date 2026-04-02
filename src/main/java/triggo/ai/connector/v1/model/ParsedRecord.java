@@ -8,7 +8,7 @@ import java.util.Map;
  */
 public class ParsedRecord {
 
-    /** Campos de negócio extraídos do payload (ex: IDT_UNC_TSC, NOME, ...) */
+    /** Campos de negócio extraídos do payload (ex: ORDER_ID, CUSTOMER_ID, ...) */
     private Map<String, Object> fields;
 
     /** Operação Debezium: c (create), r (read/snapshot), u (update), d (delete) */

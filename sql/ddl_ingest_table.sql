@@ -2,9 +2,9 @@
 -- DDL: Tabela de staging _INGEST
 -- =============================================================================
 -- Substitua os placeholders antes de executar:
---   <DATABASE>   → nome do banco de dados (ex: LZ_SQL_IH_PRD)
---   <SCHEMA>     → nome do schema         (ex: GCOB001D)
---   <TABLE>      → nome da tabela base    (ex: NTFE001D)
+--   <DATABASE>   -> nome do banco de dados (ex: RAW_KAFKA)
+--   <SCHEMA>     -> nome do schema         (ex: NORTHWIND)
+--   <TABLE>      -> nome da tabela base    (ex: ORDERS)
 --
 -- A tabela de staging é sempre <TABLE>_INGEST.
 -- Adicione as colunas de negócio conforme a estrutura da tabela origem.
@@ -19,9 +19,9 @@ CREATE TABLE IF NOT EXISTS <TABLE>_INGEST (
     -- Colunas de negócio — ajuste conforme a tabela origem
     -- =========================================================================
     -- Exemplos:
-    IDT_UNC_TSC         NUMBER(38, 0),
-    IDT_SEQ_UNC         NUMBER(38, 0),
-    NUM_UNC_PTB         VARCHAR(255),
+    ORDER_ID            NUMBER(5, 0),
+    CUSTOMER_ID         VARCHAR(5),
+    ORDER_DATE          DATE,
     -- ... adicione as demais colunas aqui ...
 
     -- =========================================================================
@@ -51,11 +51,11 @@ CREATE TABLE IF NOT EXISTS <TABLE>_INGEST (
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS <TABLE> (
 
-    IDT_UNC_TSC         NUMBER(38, 0)   NOT NULL,
-    IDT_SEQ_UNC         NUMBER(38, 0)   NOT NULL,
-    NUM_UNC_PTB         VARCHAR(255),
+    ORDER_ID            NUMBER(5, 0)    NOT NULL,
+    CUSTOMER_ID         VARCHAR(5),
+    ORDER_DATE          DATE,
     -- ... adicione as demais colunas aqui ...
 
-    CONSTRAINT PK_<TABLE> PRIMARY KEY (IDT_UNC_TSC, IDT_SEQ_UNC)
+    CONSTRAINT PK_<TABLE> PRIMARY KEY (ORDER_ID)
 
 );

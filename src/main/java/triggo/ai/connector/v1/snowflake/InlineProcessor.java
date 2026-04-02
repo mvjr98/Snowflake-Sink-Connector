@@ -44,6 +44,9 @@ public class InlineProcessor {
     /** PKs resolvidas: pk.fields se informado, senão descoberto via DatabaseMetaData. */
     private List<String> resolvedPks;
 
+    /** Último instante de execução do cleanup periódico de expiração. */
+    private long lastPeriodicCleanupMs;
+
     public InlineProcessor(SnowflakeSinkConfig config) {
         this.config = config;
     }
@@ -118,7 +121,13 @@ public class InlineProcessor {
         String target  = config.getSnowflakeTable();
         List<String> pks = resolvedPks;
         int batchSize  = config.getMergeBatchSize();
-        int cleanupDelaySeconds = config.getIngestCleanupDelaySeconds();
+        boolean hasPending = hasAnyRow(conn, ingest);
+
+        if (!hasPending) {
+            log.debug("processAllPending: _INGEST sem dados pendentes. Pulando MERGE.");
+            cleanupExpiredRows(conn);
+            return;
+        }
 
         log.info("InlineProcessor.processAllPending: table={}, batchSize={}", target, batchSize);
 
@@ -170,13 +179,14 @@ public class InlineProcessor {
                 + "ORDER BY KFK_PARTITION ASC, KFK_OFFSET ASC LIMIT " + batchSize
                 + ") AS batch WHERE ingest.KFK_TOPIC = batch.KFK_TOPIC "
                 + "AND ingest.KFK_PARTITION = batch.KFK_PARTITION "
-                + "AND ingest.KFK_OFFSET = batch.KFK_OFFSET "
-                + "AND ingest.KFK_DATETIME <= DATEADD('SECOND', -" + cleanupDelaySeconds + ", CURRENT_TIMESTAMP())";
+                + "AND ingest.KFK_OFFSET = batch.KFK_OFFSET";
 
         try (Statement stmt = conn.createStatement()) {
             int deleted = stmt.executeUpdate(cleanupSQL);
             log.debug("processAllPending cleanup: {} registros removidos da {}", deleted, ingest);
         }
+
+        cleanupExpiredRows(conn);
 
         log.info("processAllPending concluído. table={}", target);
     }
@@ -207,8 +217,13 @@ public class InlineProcessor {
      * Usado no modo STAGE para limpar blocos antigos quando cleanup delay > 0.
      */
     public void cleanupExpiredRows(Connection conn) throws Exception {
+        if (!shouldRunPeriodicCleanup()) {
+            return;
+        }
+
         int cleanupDelaySeconds = config.getIngestCleanupDelaySeconds();
         if (cleanupDelaySeconds <= 0) {
+            lastPeriodicCleanupMs = System.currentTimeMillis();
             return;
         }
 
@@ -219,6 +234,25 @@ public class InlineProcessor {
             int deleted = stmt.executeUpdate(sql);
             log.debug("cleanupExpiredRows: {} registros removidos da {}",
                     deleted, config.getIngestTable());
+        }
+
+        lastPeriodicCleanupMs = System.currentTimeMillis();
+    }
+
+    private boolean shouldRunPeriodicCleanup() {
+        int intervalSeconds = config.getIngestCleanupIntervalSeconds();
+        if (intervalSeconds <= 0) {
+            return true;
+        }
+
+        long now = System.currentTimeMillis();
+        return (now - lastPeriodicCleanupMs) >= intervalSeconds * 1000L;
+    }
+
+    private boolean hasAnyRow(Connection conn, String tableName) throws Exception {
+        String sql = "SELECT 1 FROM " + tableName + " LIMIT 1";
+        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
+            return rs.next();
         }
     }
 
