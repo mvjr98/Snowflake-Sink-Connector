@@ -7,11 +7,11 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>triggo.ai</groupId>
-    <artifactId>snowflake-sink-connector</artifactId>
+    <artifactId>triggo-ai-snowflake-sink-connector</artifactId>
     <version>1.0.0</version>
     <packaging>jar</packaging>
 
-    <name>Snowflake Custom Sink Connector</name>
+    <name>Triggo.ai Snowflake Sink Connector</name>
     <description>Kafka Connect Sink Connector for Snowflake with multi-format support</description>
 
     <properties>

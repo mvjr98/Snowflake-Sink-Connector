@@ -207,7 +207,7 @@ mvn clean package -DskipTests
 
 Artefato gerado:
 
-- `target/snowflake-sink-connector-1.0.0.jar`
+- `target/triggo-ai-snowflake-sink-connector-1.0.0.jar`
 
 Instalacao no Kafka Connect:
 
