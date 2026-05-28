@@ -10,18 +10,14 @@ import org.slf4j.LoggerFactory;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.sql.DatabaseMetaData;
 import java.sql.Connection;
-import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.UUID;
 
 /**
  * Grava registros na tabela _INGEST via Stage intermediário.
@@ -34,6 +30,9 @@ import java.util.UUID;
  *
  * O processamento da _INGEST para a tabela final é síncrono (dentro do flush),
  * portanto o CleanupJob neste modo apenas remove registros antigos da _INGEST.
+ *
+ * Schema (tipos de colunas para casts no COPY INTO) é injetado via construtor —
+ * não há chamadas de metadados nesta classe.
  */
 public class StageCopyWriter implements IngestWriter {
 
@@ -41,15 +40,16 @@ public class StageCopyWriter implements IngestWriter {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final SnowflakeSinkConfig config;
+    private final IngestSchema schema;
     private final String stageName;
-    private final Map<String, String> ingestColumnTypes = new HashMap<>();
 
     private Connection connection;
     private SnowflakeConnection snowflakeConnection;
     private InlineProcessor inlineProcessor;
 
-    public StageCopyWriter(SnowflakeSinkConfig config) {
+    public StageCopyWriter(SnowflakeSinkConfig config, IngestSchema schema) {
         this.config    = config;
+        this.schema    = schema;
         this.stageName = config.getSnowflakeTable();
     }
 
@@ -63,9 +63,8 @@ public class StageCopyWriter implements IngestWriter {
         // Unwrap para ter acesso ao uploadStream() da API Snowflake
         snowflakeConnection = connection.unwrap(SnowflakeConnection.class);
 
-        inlineProcessor = new InlineProcessor(config);
+        inlineProcessor = new InlineProcessor(config, schema);
 
-        loadIngestColumnTypes();
         ensureStageExists();
         log.info("StageCopyWriter pronto.");
     }
@@ -147,30 +146,9 @@ public class StageCopyWriter implements IngestWriter {
         }
     }
 
-    private void loadIngestColumnTypes() throws Exception {
-        String db = config.getSnowflakeDatabase().toUpperCase(Locale.ROOT);
-        String schema = config.getSnowflakeSchema().toUpperCase(Locale.ROOT);
-        String table = config.getIngestTable().toUpperCase(Locale.ROOT);
-
-        DatabaseMetaData meta = connection.getMetaData();
-        try (ResultSet rs = meta.getColumns(db, schema, table, null)) {
-            while (rs.next()) {
-                ingestColumnTypes.put(
-                        rs.getString("COLUMN_NAME").toUpperCase(Locale.ROOT),
-                        rs.getString("TYPE_NAME").toUpperCase(Locale.ROOT)
-                );
-            }
-        }
-
-        if (ingestColumnTypes.isEmpty()) {
-            throw new RuntimeException("StageCopyWriter: nenhuma coluna encontrada em " + config.getIngestTable()
-                    + ". Verifique se a tabela _INGEST existe e se as credenciais têm acesso.");
-        }
-    }
-
     private String buildSelectExpression(String col) {
         String jsonRef = "$1:" + col;
-        String typeName = ingestColumnTypes.getOrDefault(col.toUpperCase(Locale.ROOT), "VARCHAR");
+        String typeName = schema.ingestColumnTypes.getOrDefault(col.toUpperCase(Locale.ROOT), "VARCHAR");
 
         if (isNumberType(typeName)) {
             return "TRY_TO_NUMBER(" + jsonRef + "::STRING)";

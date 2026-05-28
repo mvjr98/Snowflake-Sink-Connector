@@ -4,6 +4,7 @@ import triggo.ai.connector.v1.config.SnowflakeSinkConfig;
 import triggo.ai.connector.v1.model.ParsedRecord;
 import triggo.ai.connector.v1.parser.AutoParser;
 import triggo.ai.connector.v1.parser.PayloadParser;
+import triggo.ai.connector.v1.snowflake.IngestSchema;
 import triggo.ai.connector.v1.snowflake.IngestWriter;
 import triggo.ai.connector.v1.snowflake.InlineProcessor;
 import triggo.ai.connector.v1.snowflake.SnowflakeConnectionHelper;
@@ -48,6 +49,7 @@ public class SnowflakeSinkTask extends SinkTask {
     private static final Logger log = LoggerFactory.getLogger(SnowflakeSinkTask.class);
 
     private SnowflakeSinkConfig      config;
+    private IngestSchema             schema;
     private PayloadParser            parser;
     private IngestWriter             writer;
     private ScheduledExecutorService processingExecutor; // só para SNOWPIPE_STREAMING
@@ -66,6 +68,15 @@ public class SnowflakeSinkTask extends SinkTask {
     public void start(Map<String, String> props) {
         log.info("Iniciando SnowflakeSinkTask");
         config = new SnowflakeSinkConfig(props);
+
+        // Resolução única de schema (FinOps: evita chamadas repetidas de getColumns
+        // em todo restart de task. Veja docs/superpowers/specs/2026-05-28-finops-metadata-validation-design.md).
+        try (Connection conn = SnowflakeConnectionHelper.createJdbcConnection(config)) {
+            schema = IngestSchema.resolve(conn, config);
+        } catch (Exception e) {
+            throw new RuntimeException("Falha ao resolver schema do Snowflake", e);
+        }
+
         parser = buildParser();
         writer = buildWriter();
 
@@ -166,7 +177,7 @@ public class SnowflakeSinkTask extends SinkTask {
     private IngestWriter buildWriter() {
         return switch (config.getIngestionMode()) {
             case SNOWPIPE_STREAMING -> new SnowpipeStreamingWriter(config);
-            case STAGE              -> new StageCopyWriter(config);
+            case STAGE              -> new StageCopyWriter(config, schema);
         };
     }
 
@@ -247,7 +258,7 @@ public class SnowflakeSinkTask extends SinkTask {
      * Intervalo configurado em job.interval.seconds (padrão: 30s).
      */
     private void startAsyncProcessor() {
-        InlineProcessor inlineProcessor = new InlineProcessor(config);
+        InlineProcessor inlineProcessor = new InlineProcessor(config, schema);
         int intervalSeconds = config.getJobIntervalSeconds();
 
         processingExecutor = Executors.newSingleThreadScheduledExecutor(r -> {

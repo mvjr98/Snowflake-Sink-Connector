@@ -5,10 +5,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.sql.Connection;
-import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
 import java.sql.Statement;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -26,29 +24,22 @@ import java.util.stream.Collectors;
  *    Chamado pelo CleanupJob. Usa MERGE com window function para pegar
  *    o estado mais recente de cada PK e aplicar na tabela final.
  *
- * Os nomes de colunas da tabela final são descobertos via DatabaseMetaData
- * na primeira execução e cacheados em memória.
+ * Schema (colunas + PKs) é fornecido via IngestSchema, resolvido uma única vez
+ * no SnowflakeSinkTask.start() — esta classe não faz chamadas de metadados.
  */
 public class InlineProcessor {
 
     private static final Logger log = LoggerFactory.getLogger(InlineProcessor.class);
 
     private final SnowflakeSinkConfig config;
-
-    /** Colunas de negócio da tabela final (sem prefixo KFK_). Lazy-loaded. */
-    private List<String> businessColumns;
-
-    /** Colunas de negócio que não são PK (usadas no SET do UPDATE). */
-    private List<String> nonPkColumns;
-
-    /** PKs resolvidas: pk.fields se informado, senão descoberto via DatabaseMetaData. */
-    private List<String> resolvedPks;
+    private final IngestSchema schema;
 
     /** Último instante de execução do cleanup periódico de expiração. */
     private long lastPeriodicCleanupMs;
 
-    public InlineProcessor(SnowflakeSinkConfig config) {
+    public InlineProcessor(SnowflakeSinkConfig config, IngestSchema schema) {
         this.config = config;
+        this.schema = schema;
     }
 
     // -------------------------------------------------------------------------
@@ -60,26 +51,24 @@ public class InlineProcessor {
      * Chamado pelo StageCopyWriter após o COPY INTO.
      */
     public void processBlock(Connection conn, String blockId) throws Exception {
-        initColumns(conn);
-
         String ingest = config.getIngestTable();
         String target = config.getSnowflakeTable();
-        List<String> pks = resolvedPks;
+        List<String> pks = schema.pks;
 
         log.debug("InlineProcessor.processBlock: table={}, blockId={}", target, blockId);
 
         try (Statement stmt = conn.createStatement()) {
 
             // --- INSERT para operações c (create) e r (snapshot) ---
-            String cols   = String.join(", ", businessColumns);
+            String cols   = String.join(", ", schema.finalColumns);
             String insert = String.format(
                 "INSERT INTO %s (%s) SELECT %s FROM %s WHERE KFK_BLOCKID = '%s' AND KFK_OP IN ('c', 'r')",
                 target, cols, cols, ingest, blockId);
             int inserted = stmt.executeUpdate(insert);
 
             // --- UPDATE para operação u ---
-            if (!nonPkColumns.isEmpty()) {
-                String setClause  = nonPkColumns.stream()
+            if (!schema.nonPkColumns.isEmpty()) {
+                String setClause  = schema.nonPkColumns.stream()
                         .map(c -> "final." + c + " = src." + c)
                         .collect(Collectors.joining(", "));
                 String pkWhere = buildPkJoin(pks, "final", "src");
@@ -115,11 +104,9 @@ public class InlineProcessor {
      * Chamado pelo CleanupJob no modo SNOWPIPE_STREAMING.
      */
     public void processAllPending(Connection conn) throws Exception {
-        initColumns(conn);
-
         String ingest  = config.getIngestTable();
         String target  = config.getSnowflakeTable();
-        List<String> pks = resolvedPks;
+        List<String> pks = schema.pks;
         int batchSize  = config.getMergeBatchSize();
         boolean hasPending = hasAnyRow(conn, ingest);
 
@@ -133,11 +120,11 @@ public class InlineProcessor {
 
         String pkPartition = pks.stream().map(p -> "src_inner." + p).collect(Collectors.joining(", "));
         String pkJoin      = buildPkJoin(pks, "tgt", "src");
-        String colList     = String.join(", ", businessColumns);
-        String srcColList  = businessColumns.stream().map(c -> "src." + c).collect(Collectors.joining(", "));
+        String colList     = String.join(", ", schema.finalColumns);
+        String srcColList  = schema.finalColumns.stream().map(c -> "src." + c).collect(Collectors.joining(", "));
 
-        String setClause = nonPkColumns.isEmpty() ? "" :
-                nonPkColumns.stream()
+        String setClause = schema.nonPkColumns.isEmpty() ? "" :
+                schema.nonPkColumns.stream()
                         .map(c -> "tgt." + c + " = src." + c)
                         .collect(Collectors.joining(", "));
 
@@ -159,7 +146,7 @@ public class InlineProcessor {
         merge.append(") AS src\n");
         merge.append("ON (").append(pkJoin).append(")\n");
 
-        if (!nonPkColumns.isEmpty()) {
+        if (!schema.nonPkColumns.isEmpty()) {
             merge.append("WHEN MATCHED AND src.KFK_OP IN ('c', 'r', 'u') THEN UPDATE SET ").append(setClause).append("\n");
         }
 
@@ -254,65 +241,6 @@ public class InlineProcessor {
         try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
             return rs.next();
         }
-    }
-
-    // -------------------------------------------------------------------------
-    // Helpers
-    // -------------------------------------------------------------------------
-
-    /**
-     * Carrega colunas e PKs da tabela final via DatabaseMetaData.
-     * PKs: usa pk.fields se informado; senão descobre automaticamente da tabela target.
-     * Executado apenas uma vez (lazy init thread-safe).
-     */
-    synchronized void initColumns(Connection conn) throws Exception {
-        if (businessColumns != null) return;
-
-        String db     = config.getSnowflakeDatabase().toUpperCase();
-        String schema = config.getSnowflakeSchema().toUpperCase();
-        String table  = config.getSnowflakeTable().toUpperCase();
-
-        DatabaseMetaData meta = conn.getMetaData();
-
-        // 1. Colunas da tabela final
-        List<String> cols = new ArrayList<>();
-        try (ResultSet rs = meta.getColumns(db, schema, table, null)) {
-            while (rs.next()) {
-                cols.add(rs.getString("COLUMN_NAME"));
-            }
-        }
-
-        if (cols.isEmpty()) {
-            throw new RuntimeException("InlineProcessor: nenhuma coluna encontrada para tabela "
-                    + schema + "." + table
-                    + ". Verifique se a tabela existe e as credenciais têm acesso.");
-        }
-
-        // 2. PKs: pk.fields (FLAT_JSON) ou auto-descoberta via DatabaseMetaData
-        List<String> pks;
-        if (!config.getPkFields().isEmpty()) {
-            pks = config.getPkFields().stream().map(String::toUpperCase).collect(Collectors.toList());
-        } else {
-            pks = new ArrayList<>();
-            try (ResultSet rs = meta.getPrimaryKeys(db, schema, table)) {
-                while (rs.next()) {
-                    pks.add(rs.getString("COLUMN_NAME"));
-                }
-            }
-            if (pks.isEmpty()) {
-                throw new RuntimeException("InlineProcessor: nenhuma PK encontrada para tabela "
-                        + schema + "." + table
-                        + ". Defina pk.fields ou adicione uma PRIMARY KEY na tabela.");
-            }
-        }
-
-        businessColumns = cols;
-        resolvedPks     = pks;
-        nonPkColumns    = cols.stream()
-                .filter(c -> !pks.contains(c.toUpperCase()))
-                .collect(Collectors.toList());
-
-        log.info("InlineProcessor: tabela={}, colunas={}, PKs={}", table, businessColumns, resolvedPks);
     }
 
     private String buildPkJoin(List<String> pks, String leftAlias, String rightAlias) {
