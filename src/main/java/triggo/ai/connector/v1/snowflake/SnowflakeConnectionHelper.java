@@ -35,9 +35,15 @@ public class SnowflakeConnectionHelper {
         PrivateKey privateKey = parsePrivateKey(config.getSnowflakePrivateKey());
 
         Properties props = new Properties();
-        props.put("user",          config.getSnowflakeUser());
-        props.put("privateKey",    privateKey);
-        props.put("authenticator", "SNOWFLAKE_JWT");
+        props.put("user",                      config.getSnowflakeUser());
+        props.put("privateKey",                privateKey);
+        props.put("authenticator",             "SNOWFLAKE_JWT");
+        // Forca JSON em vez de Arrow pra deserializar result sets. Arrow exige
+        // --add-opens=java.base/java.nio=ALL-UNNAMED no JVM (Java 9+), que nao
+        // esta configurado no runtime padrao do cp-kafka-connect e dispara
+        // NoClassDefFoundError em RootAllocator. Nosso uso so faz SELECT 1 e
+        // DMLs (resultados pequenos), entao JSON nao tem impacto de performance.
+        props.put("JDBC_QUERY_RESULT_FORMAT",  "JSON");
 
         String url = buildJdbcUrl(config.getSnowflakeUrl());
         log.debug("Conectando ao Snowflake via JDBC (key-pair): url={}, user={}, db={}, schema={}",
