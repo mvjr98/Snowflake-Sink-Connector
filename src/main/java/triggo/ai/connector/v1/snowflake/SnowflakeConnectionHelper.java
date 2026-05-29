@@ -35,8 +35,9 @@ public class SnowflakeConnectionHelper {
         PrivateKey privateKey = parsePrivateKey(config.getSnowflakePrivateKey());
 
         Properties props = new Properties();
-        props.put("user",       config.getSnowflakeUser());
-        props.put("privateKey", privateKey);
+        props.put("user",          config.getSnowflakeUser());
+        props.put("privateKey",    privateKey);
+        props.put("authenticator", "SNOWFLAKE_JWT");
 
         String url = buildJdbcUrl(config.getSnowflakeUrl());
         log.debug("Conectando ao Snowflake via JDBC (key-pair): url={}, user={}, db={}, schema={}",
@@ -73,13 +74,14 @@ public class SnowflakeConnectionHelper {
      */
     public static Properties buildIngestSdkProperties(SnowflakeSinkConfig config) {
         Properties props = new Properties();
-        props.put("url",         config.getSnowflakeUrl()
+        props.put("url",           config.getSnowflakeUrl()
                 .replaceFirst("^https?://", "")
                 .replaceAll("/$", ""));
-        props.put("user",        config.getSnowflakeUser());
-        props.put("private_key", config.getSnowflakePrivateKey());
-        props.put("scheme",      "https");
-        props.put("port",        "443");
+        props.put("user",          config.getSnowflakeUser());
+        props.put("private_key",   config.getSnowflakePrivateKey());
+        props.put("authenticator", "SNOWFLAKE_JWT");
+        props.put("scheme",        "https");
+        props.put("port",          "443");
         return props;
     }
 
