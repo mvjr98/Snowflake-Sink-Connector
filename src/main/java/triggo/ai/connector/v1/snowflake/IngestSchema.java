@@ -95,8 +95,9 @@ public final class IngestSchema {
 
         if (finalColumnTypes.isEmpty()) {
             throw new RuntimeException("IngestSchema: nenhuma coluna encontrada para tabela "
-                    + schema + "." + table
-                    + ". Verifique se a tabela existe e se as credenciais têm acesso.");
+                    + db + "." + schema + "." + table
+                    + ". Verifique se a tabela existe e se o role do usuário tem USAGE no database/schema "
+                    + "e SELECT na tabela (INFORMATION_SCHEMA é filtrado por visibilidade do role).");
         }
 
         // PKs: pk.fields se informado (sem ir ao Snowflake); senão getPrimaryKeys
@@ -116,8 +117,8 @@ public final class IngestSchema {
             }
             if (pks.isEmpty()) {
                 throw new RuntimeException("IngestSchema: nenhuma PK encontrada para tabela "
-                        + schema + "." + table
-                        + ". Defina pk.fields ou adicione uma PRIMARY KEY na tabela.");
+                        + db + "." + schema + "." + table
+                        + ". Defina pk.fields na config do conector ou adicione uma PRIMARY KEY na tabela.");
             }
             pkSource = "metadata";
         }
