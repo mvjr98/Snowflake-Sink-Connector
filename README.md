@@ -176,6 +176,21 @@ Perfis sugeridos:
 - Baixa latencia: `buffer.flush.time=5..15`, `job.interval.seconds=5..15`, `merge.batch.size` ajustado por volume.
 - Menor custo: `buffer.flush.time=60..120`, `job.interval.seconds=60..300`, warehouse com auto-suspend curto.
 
+### Tuning por volume de eventos (tradeoff micropartitions vs latencia)
+
+Cada execucao do MERGE no Snowflake reescreve micropartitions e consome CloudServices. Em tabelas com baixo volume, MERGEs frequentes processam poucos rows mas custam o mesmo overhead que MERGEs com 10k rows. Vale ajustar `job.interval.seconds` (frequencia) e `merge.batch.size` (teto por execucao) ao perfil real de cada topico.
+
+Importante: `merge.batch.size` e teto, nao piso. Se a `_INGEST` tem 50 rows e o teto e 10000, o MERGE processa 50. Se esta vazia, o MERGE e pulado por completo (verificacao `hasAnyRow` antes do SQL).
+
+| Perfil de trafego | Throughput | `buffer.flush.time` | `job.interval.seconds` | `merge.batch.size` |
+|---|---|---|---|---|
+| Alto (CDC intenso) | > 10k events/min | 30s | 30s | 10000 (default) |
+| Medio | ~1k events/min | 60s | 60s | 5000 |
+| Baixo | ~10 events/min | 120s | 300s (5min) | 1000 |
+| Muito baixo | poucos events/hora | 300s | 1800s (30min) | 500 |
+
+Regra pratica: para uma mesma quantidade total de rows, **menos MERGEs maiores custam menos CloudServices do que mais MERGEs pequenos** porque cada execucao gera overhead fixo no Snowflake (parse, plan, micropartition rewrite). Ajustar para o volume real do topico evita pagar esse overhead em vao.
+
 ## Autenticacao Snowflake (Key Pair)
 
 Para este plugin customizado, use chave **RSA PKCS8 PEM sem criptografia**.
