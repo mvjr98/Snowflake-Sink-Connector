@@ -14,15 +14,19 @@ import java.util.stream.Collectors;
  * Executa o processamento da _INGEST para a tabela final usando SQL inline.
  * Substitui a abordagem de Stored Procedure.
  *
- * Dois modos de operação:
+ * Dois modos de operação, ambos usando o mesmo MERGE (buildMergeSql):
  *
  * 1. processBlock(conn, blockId) — para STAGE
- *    Chamado logo após o COPY INTO, processa um blockId específico com 3 SQLs:
- *    INSERT (c/r), UPDATE (u), DELETE (d).
+ *    Chamado logo após o COPY INTO, processa um blockId específico.
  *
  * 2. processAllPending(conn) — para SNOWPIPE_STREAMING
- *    Chamado pelo CleanupJob. Usa MERGE com window function para pegar
- *    o estado mais recente de cada PK e aplicar na tabela final.
+ *    Chamado pelo CleanupJob. Processa os registros pendentes em lotes.
+ *
+ * O MERGE usa ROW_NUMBER para pegar o estado mais recente de cada PK e aplica
+ * INSERT/UPDATE/DELETE conforme o KFK_OP. Quando merge.skip.unchanged=true
+ * (padrão), o UPDATE só reescreve linhas cujo HASH das colunas de negócio mudou,
+ * evitando write amplification em full loads redundantes (re-snapshot) e em
+ * duplicatas normais do Debezium.
  *
  * Schema (colunas + PKs) é fornecido via IngestSchema, resolvido uma única vez
  * no SnowflakeSinkTask.start() — esta classe não faz chamadas de metadados.
@@ -47,51 +51,23 @@ public class InlineProcessor {
     // -------------------------------------------------------------------------
 
     /**
-     * Processa INSERT, UPDATE e DELETE de um blockId específico.
+     * Processa um blockId específico via MERGE (upsert idempotente).
      * Chamado pelo StageCopyWriter após o COPY INTO.
      */
     public void processBlock(Connection conn, String blockId) throws Exception {
         String ingest = config.getIngestTable();
         String target = config.getSnowflakeTable();
-        List<String> pks = schema.pks;
 
         log.debug("InlineProcessor.processBlock: table={}, blockId={}", target, blockId);
 
+        String batchSelect = "SELECT * FROM " + ingest + " WHERE KFK_BLOCKID = '" + blockId + "'";
+        String mergeSQL = buildMergeSql(batchSelect);
+        log.debug("processBlock MERGE SQL:\n{}", mergeSQL);
+
         try (Statement stmt = conn.createStatement()) {
-
-            // --- INSERT para operações c (create) e r (snapshot) ---
-            String cols   = String.join(", ", schema.finalColumns);
-            String insert = String.format(
-                "INSERT INTO %s (%s) SELECT %s FROM %s WHERE KFK_BLOCKID = '%s' AND KFK_OP IN ('c', 'r')",
-                target, cols, cols, ingest, blockId);
-            int inserted = stmt.executeUpdate(insert);
-
-            // --- UPDATE para operação u ---
-            if (!schema.nonPkColumns.isEmpty()) {
-                String setClause  = schema.nonPkColumns.stream()
-                        .map(c -> "final." + c + " = src." + c)
-                        .collect(Collectors.joining(", "));
-                String pkWhere = buildPkJoin(pks, "final", "src");
-                String update = String.format(
-                    "UPDATE %s AS final SET %s FROM " +
-                    "(SELECT * FROM %s WHERE KFK_BLOCKID = '%s' AND KFK_OP = 'u') AS src WHERE %s",
-                    target, setClause, ingest, blockId, pkWhere);
-                int updated = stmt.executeUpdate(update);
-                log.debug("blockId={}: INSERT={}, UPDATE={}", blockId, inserted, updated);
-            } else {
-                log.debug("blockId={}: INSERT={} (sem colunas non-PK para UPDATE)", blockId, inserted);
-            }
-
-            // --- DELETE para operação d ---
-            String pkCols  = String.join(", ", pks);
-            String pkWhere = buildPkJoin(pks, "final", "src");
-            String delete = String.format(
-                "DELETE FROM %s AS final USING " +
-                "(SELECT %s FROM %s WHERE KFK_BLOCKID = '%s' AND KFK_OP = 'd') AS src WHERE %s",
-                target, pkCols, ingest, blockId, pkWhere);
-            int deleted = stmt.executeUpdate(delete);
-            log.debug("blockId={}: DELETE={}", blockId, deleted);
+            stmt.execute(mergeSQL);
         }
+        log.debug("processBlock concluído. blockId={}", blockId);
     }
 
     // -------------------------------------------------------------------------
@@ -106,7 +82,6 @@ public class InlineProcessor {
     public void processAllPending(Connection conn) throws Exception {
         String ingest  = config.getIngestTable();
         String target  = config.getSnowflakeTable();
-        List<String> pks = schema.pks;
         int batchSize  = config.getMergeBatchSize();
         boolean hasPending = hasAnyRow(conn, ingest);
 
@@ -118,43 +93,9 @@ public class InlineProcessor {
 
         log.info("InlineProcessor.processAllPending: table={}, batchSize={}", target, batchSize);
 
-        String pkPartition = pks.stream().map(p -> "src_inner." + p).collect(Collectors.joining(", "));
-        String pkJoin      = buildPkJoin(pks, "tgt", "src");
-        String colList     = String.join(", ", schema.finalColumns);
-        String srcColList  = schema.finalColumns.stream().map(c -> "src." + c).collect(Collectors.joining(", "));
-
-        String setClause = schema.nonPkColumns.isEmpty() ? "" :
-                schema.nonPkColumns.stream()
-                        .map(c -> "tgt." + c + " = src." + c)
-                        .collect(Collectors.joining(", "));
-
-        StringBuilder merge = new StringBuilder();
-        merge.append("MERGE INTO ").append(target).append(" AS tgt\n");
-        merge.append("USING (\n");
-        merge.append("    WITH batch AS (\n");
-        merge.append("        SELECT * FROM ").append(ingest).append("\n");
-        merge.append("        ORDER BY KFK_PARTITION ASC, KFK_OFFSET ASC\n");
-        merge.append("        LIMIT ").append(batchSize).append("\n");
-        merge.append("    )\n");
-        merge.append("    SELECT ").append(colList).append(", KFK_OP FROM (\n");
-        merge.append("        SELECT src_inner.*, ROW_NUMBER() OVER (\n");
-        merge.append("            PARTITION BY ").append(pkPartition).append("\n");
-        merge.append("            ORDER BY KFK_OFFSET DESC, KFK_PARTITION DESC\n");
-        merge.append("        ) AS rn\n");
-        merge.append("        FROM batch AS src_inner\n");
-        merge.append("    ) ranked WHERE rn = 1\n");
-        merge.append(") AS src\n");
-        merge.append("ON (").append(pkJoin).append(")\n");
-
-        if (!schema.nonPkColumns.isEmpty()) {
-            merge.append("WHEN MATCHED AND src.KFK_OP IN ('c', 'r', 'u') THEN UPDATE SET ").append(setClause).append("\n");
-        }
-
-        merge.append("WHEN NOT MATCHED AND src.KFK_OP IN ('c', 'r') THEN INSERT (").append(colList).append(")\n");
-        merge.append("    VALUES (").append(srcColList).append(")\n");
-        merge.append("WHEN MATCHED AND src.KFK_OP = 'd' THEN DELETE");
-
-        String mergeSQL = merge.toString();
+        String batchSelect = "SELECT * FROM " + ingest
+                + " ORDER BY KFK_PARTITION ASC, KFK_OFFSET ASC LIMIT " + batchSize;
+        String mergeSQL = buildMergeSql(batchSelect);
         log.debug("MERGE SQL:\n{}", mergeSQL);
 
         try (Statement stmt = conn.createStatement()) {
@@ -247,5 +188,68 @@ public class InlineProcessor {
         return pks.stream()
                 .map(pk -> leftAlias + "." + pk + " = " + rightAlias + "." + pk)
                 .collect(Collectors.joining(" AND "));
+    }
+
+    /**
+     * HASH das colunas de negócio para um alias (tgt/src). Usado no hash-guard
+     * do UPDATE para detectar linhas inalteradas e pular a reescrita.
+     */
+    private String hashExpr(String alias) {
+        return "HASH(" + schema.finalColumns.stream()
+                .map(c -> alias + "." + c)
+                .collect(Collectors.joining(", ")) + ")";
+    }
+
+    /**
+     * Monta o MERGE _INGEST → final, compartilhado pelos dois modos.
+     * O único parâmetro que varia é o batchSelect (a fonte das linhas):
+     *   STAGE:    SELECT * FROM _INGEST WHERE KFK_BLOCKID = '...'
+     *   SNOWPIPE: SELECT * FROM _INGEST ORDER BY ... LIMIT batchSize
+     *
+     * ROW_NUMBER por PK pega o estado mais recente (por offset) dentro do batch.
+     * Quando merge.skip.unchanged=true, o UPDATE só ocorre se o HASH das colunas
+     * de negócio diferir entre destino e origem (evita reescrita de micropartição
+     * para linhas idênticas).
+     */
+    private String buildMergeSql(String batchSelect) {
+        String target      = config.getSnowflakeTable();
+        List<String> pks   = schema.pks;
+        String pkPartition = pks.stream().map(p -> "src_inner." + p).collect(Collectors.joining(", "));
+        String pkJoin      = buildPkJoin(pks, "tgt", "src");
+        String colList     = String.join(", ", schema.finalColumns);
+        String srcColList  = schema.finalColumns.stream().map(c -> "src." + c).collect(Collectors.joining(", "));
+
+        StringBuilder merge = new StringBuilder();
+        merge.append("MERGE INTO ").append(target).append(" AS tgt\n");
+        merge.append("USING (\n");
+        merge.append("    WITH batch AS (\n");
+        merge.append("        ").append(batchSelect).append("\n");
+        merge.append("    )\n");
+        merge.append("    SELECT ").append(colList).append(", KFK_OP FROM (\n");
+        merge.append("        SELECT src_inner.*, ROW_NUMBER() OVER (\n");
+        merge.append("            PARTITION BY ").append(pkPartition).append("\n");
+        merge.append("            ORDER BY KFK_OFFSET DESC, KFK_PARTITION DESC\n");
+        merge.append("        ) AS rn\n");
+        merge.append("        FROM batch AS src_inner\n");
+        merge.append("    ) ranked WHERE rn = 1\n");
+        merge.append(") AS src\n");
+        merge.append("ON (").append(pkJoin).append(")\n");
+
+        if (!schema.nonPkColumns.isEmpty()) {
+            String setClause = schema.nonPkColumns.stream()
+                    .map(c -> "tgt." + c + " = src." + c)
+                    .collect(Collectors.joining(", "));
+            merge.append("WHEN MATCHED AND src.KFK_OP IN ('c', 'r', 'u')");
+            if (config.isMergeSkipUnchanged()) {
+                merge.append(" AND ").append(hashExpr("tgt")).append(" <> ").append(hashExpr("src"));
+            }
+            merge.append(" THEN UPDATE SET ").append(setClause).append("\n");
+        }
+
+        merge.append("WHEN NOT MATCHED AND src.KFK_OP IN ('c', 'r') THEN INSERT (").append(colList).append(")\n");
+        merge.append("    VALUES (").append(srcColList).append(")\n");
+        merge.append("WHEN MATCHED AND src.KFK_OP = 'd' THEN DELETE");
+
+        return merge.toString();
     }
 }

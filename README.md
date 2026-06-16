@@ -161,6 +161,7 @@ Exemplo minimo:
 - `buffer.flush.time`: tempo maximo (segundos) para flush do buffer quando ha trafego continuo.
 - `job.interval.seconds`: intervalo do job assincrono `_INGEST -> final` (MERGE) no modo `SNOWPIPE_STREAMING`.
 - `merge.batch.size`: quantidade maxima de linhas lidas da `_INGEST` por execucao do MERGE.
+- `merge.skip.unchanged`: quando `true` (padrao), pula a reescrita de linhas cujo conteudo de negocio nao mudou (ver "Idempotencia e full load" abaixo).
 - `ingest.cleanup.delay.seconds`: idade minima dos registros para limpeza por expiracao na `_INGEST` (padrao 86400).
 - `ingest.cleanup.interval.seconds`: frequencia do cleanup por expiracao (padrao 86400 = 1x por dia).
 
@@ -190,6 +191,37 @@ Importante: `merge.batch.size` e teto, nao piso. Se a `_INGEST` tem 50 rows e o 
 | Muito baixo | poucos events/hora | 300s | 1800s (30min) | 500 |
 
 Regra pratica: para uma mesma quantidade total de rows, **menos MERGEs maiores custam menos CloudServices do que mais MERGEs pequenos** porque cada execucao gera overhead fixo no Snowflake (parse, plan, micropartition rewrite). Ajustar para o volume real do topico evita pagar esse overhead em vao.
+
+## Idempotencia e full load (hash-guard)
+
+Ambos os modos (`SNOWPIPE_STREAMING` e `STAGE`) aplicam `_INGEST -> final` via **MERGE** com `ROW_NUMBER` por PK. Isso garante idempotencia: nao importa se o evento chega duplicado, como `r` (snapshot) ou `c` (create) — o resultado e sempre um upsert correto, sem duplicata.
+
+O problema de custo aparece num **full load redundante** (re-snapshot do Debezium com o destino ja populado): milhoes de linhas identicas voltam e seriam reescritas. No Snowflake micropartition e imutavel — um UPDATE reescreve a particao inteira (~16MB) mesmo para uma linha que nao mudou (write amplification).
+
+O **hash-guard** (`merge.skip.unchanged=true`, padrao) compara o `HASH()` das colunas de negocio entre destino e origem e so reescreve quando o conteudo realmente mudou:
+
+```sql
+WHEN MATCHED AND src.KFK_OP IN ('c','r','u')
+     AND HASH(tgt.<cols>) <> HASH(src.<cols>) THEN UPDATE SET ...
+```
+
+Efeito num re-load de uma tabela com 100 linhas onde a origem agora tem 180:
+
+| Registros | Acao no MERGE |
+|---|---|
+| 80 novos | INSERT (entram) |
+| 100 identicos | skip — nenhuma micropartition reescrita |
+| linhas que de fato mudaram | UPDATE |
+
+Beneficios:
+- Vale para re-snapshot **e** para as duplicatas normais da entrega at-least-once do Debezium.
+- O HASH e calculado on-the-fly no MERGE; a tabela final continua so com colunas de negocio (sem coluna de metadado extra).
+- `merge.skip.unchanged=false` volta ao comportamento de sempre reescrever.
+
+Fora de escopo (tratado de outra forma):
+
+- **Custo de ingestao** (Snowpipe paga por dado trafegado): o hash nao economiza, pois o dado ja trafegou para a `_INGEST`. Para full loads grandes, prefira o modo `STAGE` (COPY e muito mais barato por byte) e reserve `SNOWPIPE_STREAMING` para CDC continuo.
+- **DELETE durante downtime**: um re-snapshot nao traz linhas que foram deletadas na origem enquanto o conector estava fora, entao elas ficam orfas no destino. A reconciliacao e operacional: `TRUNCATE` no destino + full load deliberado (destino vazio, todos os `r` entram via INSERT).
 
 ## Autenticacao Snowflake (Key Pair)
 

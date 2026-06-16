@@ -47,6 +47,14 @@ public class SnowflakeSinkConfig extends AbstractConfig {
     public static final String MERGE_BATCH_SIZE      = "merge.batch.size";
 
     /**
+     * Quando true (padrão), o MERGE pula a reescrita de linhas cujo conteúdo
+     * de negócio não mudou (comparação via HASH das colunas). Evita write
+     * amplification em full loads redundantes (re-snapshot) e em duplicatas
+     * normais do Debezium. false volta ao comportamento de sempre reescrever.
+     */
+    public static final String MERGE_SKIP_UNCHANGED  = "merge.skip.unchanged";
+
+    /**
      * Delay em segundos para remover registros da _INGEST após processamento.
      * 0 = cleanup imediato (padrão).
      */
@@ -143,6 +151,12 @@ public class SnowflakeSinkConfig extends AbstractConfig {
                     Importance.LOW,
                     "Número máximo de linhas processadas por execução (SNOWPIPE_STREAMING).")
 
+            .define(MERGE_SKIP_UNCHANGED,
+                    Type.BOOLEAN, true,
+                    Importance.MEDIUM,
+                    "Pula a reescrita de linhas cujo conteúdo de negócio não mudou (HASH). " +
+                    "Evita custo em full loads redundantes. Padrão: true.")
+
             .define(INGEST_CLEANUP_DELAY_SECONDS,
                     Type.INT, 86400,
                     ConfigDef.Range.atLeast(0),
@@ -226,8 +240,9 @@ public class SnowflakeSinkConfig extends AbstractConfig {
                 .collect(Collectors.toList());
     }
 
-    public int  getJobIntervalSeconds() { return getInt(JOB_INTERVAL_SECONDS); }
-    public int  getMergeBatchSize()     { return getInt(MERGE_BATCH_SIZE); }
+    public int     getJobIntervalSeconds() { return getInt(JOB_INTERVAL_SECONDS); }
+    public int     getMergeBatchSize()     { return getInt(MERGE_BATCH_SIZE); }
+    public boolean isMergeSkipUnchanged()  { return getBoolean(MERGE_SKIP_UNCHANGED); }
     public int  getIngestCleanupDelaySeconds() { return getInt(INGEST_CLEANUP_DELAY_SECONDS); }
     public int  getIngestCleanupIntervalSeconds() { return getInt(INGEST_CLEANUP_INTERVAL_SECONDS); }
 
